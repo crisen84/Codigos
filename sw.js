@@ -1,7 +1,7 @@
 /* Lector de códigos — service worker
    Guarda la app completa para que abra sin conexión. */
 
-const CACHE = 'lector-codigos-v8';
+const CACHE = 'lector-codigos-v1';
 const ARCHIVOS = [
   './',
   './index.html',
