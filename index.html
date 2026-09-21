@@ -1,0 +1,2197 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Lector de códigos</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F6B4B" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101410" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Códigos">
+<meta name="description" content="Lee códigos de barras con la cámara. Funciona sin conexión.">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  :root{
+    /* Material 3 — esquema claro, semilla verde */
+    --primario:#0F6B4B;         --sobre-primario:#FFFFFF;
+    --prim-cont:#A9F2CD;        --sobre-prim-cont:#002114;
+    --superficie:#F6FAF6;       --sobre-superficie:#181D19;
+    --sup-cont:#ECF2EC;         --sup-cont-alto:#E5EBE5;
+    --sobre-sup-var:#414942;    --contorno:#C1C9C1;
+    --error:#BA1A1A;            --err-cont:#FFDAD6;  --sobre-err-cont:#410002;
+    --barra:#0F6B4B;            --sobre-barra:#FFFFFF;
+    --visor:#000000;
+    --ripple:rgba(0,33,20,.14);
+    --r-xs:8px; --r-s:12px; --r-m:16px; --r-l:28px;
+    --sans:Roboto, "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono:"Roboto Mono", ui-monospace, Consolas, monospace;
+    box-sizing:border-box;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --primario:#6FDCA7;       --sobre-primario:#003825;
+      --prim-cont:#005237;      --sobre-prim-cont:#8CF9C2;
+      --superficie:#101410;     --sobre-superficie:#E0E4DE;
+      --sup-cont:#1B211C;       --sup-cont-alto:#252B26;
+      --sobre-sup-var:#C0C9C1;  --contorno:#8B938C;
+      --error:#FFB4AB;          --err-cont:#93000A;  --sobre-err-cont:#FFDAD6;
+      --barra:#1B211C;          --sobre-barra:#E0E4DE;
+      --ripple:rgba(255,255,255,.16);
+    }
+  }
+  *,*::before,*::after{box-sizing:inherit}
+  [hidden]{display:none !important}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--superficie); color:var(--sobre-superficie);
+    font-family:var(--sans); font-size:15px; line-height:1.45;
+    -webkit-tap-highlight-color:transparent; overscroll-behavior:none;
+    -webkit-user-select:none; user-select:none;
+  }
+  input, .valor, .seleccionable{-webkit-user-select:text; user-select:text}
+
+  .app{display:flex; flex-direction:column; height:100%; overflow:hidden}
+
+  /* ---- barra superior ---- */
+  .appbar{
+    background:var(--barra); color:var(--sobre-barra);
+    padding-top:env(safe-area-inset-top, 0px);
+    flex:none; z-index:6;
+  }
+  .appbar .contenido{height:56px; display:flex; align-items:center; gap:4px; padding:0 6px 0 16px}
+  .appbar h1{font-size:1.28rem; font-weight:500; letter-spacing:.005em; margin:0; flex:1;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .icono-btn{
+    width:44px; height:44px; flex:none; border:0; background:transparent; color:inherit;
+    border-radius:50%; display:grid; place-items:center; cursor:pointer; position:relative; overflow:hidden;
+  }
+  .icono-btn:active{background:rgba(255,255,255,.14)}
+  .icono-btn.en-superficie{color:var(--sobre-sup-var)}
+  .icono-btn.en-superficie:active{background:var(--ripple)}
+  svg{display:block; pointer-events:none}
+
+  /* ---- vistas ---- */
+  main{flex:1; position:relative; overflow:hidden}
+  .vista{position:absolute; inset:0; display:none; flex-direction:column}
+  .vista.activa{display:flex}
+  .desplaza{overflow-y:auto; -webkit-overflow-scrolling:touch; padding:8px 0 96px; flex:1}
+
+  /* ---- visor de cámara ---- */
+  .camara{position:relative; flex:1; background:var(--visor); overflow:hidden; display:grid; place-items:center}
+  .camara video{width:100%; height:100%; object-fit:cover; display:none}
+  .camara.activo video{display:block}
+  .reposo{position:absolute; inset:0; display:grid; place-items:center; align-content:center; gap:18px; padding:28px; text-align:center}
+  .camara.activo .reposo{display:none}
+  .reposo p{margin:0; color:#8FA398; font-size:.92rem; max-width:30ch}
+  .marco{position:absolute; inset:0; display:none; pointer-events:none}
+  .camara.activo .marco{display:block}
+  .ventana{position:absolute; left:7%; right:7%; top:32%; bottom:32%;
+    box-shadow:0 0 0 2000px rgba(0,0,0,.5); border-radius:12px}
+  .esq{position:absolute; width:30px; height:30px; border:3px solid var(--prim-cont)}
+  .q1{top:-2px;left:-2px;border-right:0;border-bottom:0;border-radius:10px 0 0 0}
+  .q2{top:-2px;right:-2px;border-left:0;border-bottom:0;border-radius:0 10px 0 0}
+  .q3{bottom:-2px;left:-2px;border-right:0;border-top:0;border-radius:0 0 0 10px}
+  .q4{bottom:-2px;right:-2px;border-left:0;border-top:0;border-radius:0 0 10px 0}
+  .rayo{position:absolute; left:10px; right:10px; height:3px; top:50%; border-radius:3px;
+    background:linear-gradient(90deg,transparent,#8CF9C2,transparent); animation:barrer 2.4s ease-in-out infinite}
+  @keyframes barrer{0%,100%{transform:translateY(-34%) translateY(-24px)}50%{transform:translateY(-34%) translateY(24px)}}
+  @media (prefers-reduced-motion:reduce){.rayo{animation:none}}
+  .camara.matricial .ventana{left:17%; right:17%; top:26%; bottom:26%}
+  .controles-camara{position:absolute; left:16px; right:16px; bottom:156px; display:flex; flex-direction:column; gap:2px;
+    background:rgba(0,0,0,.45); border-radius:18px; padding:4px 14px; color:#fff}
+  .control{display:flex; align-items:center; gap:10px; min-height:38px}
+  .control input[type=range]{flex:1; accent-color:var(--prim-cont); height:22px; background:transparent}
+  .control span{font-size:.78rem; min-width:2.6em; text-align:right; font-variant-numeric:tabular-nums}
+  .mini-chip{border:0; border-radius:14px; height:28px; padding:0 12px; font:inherit; font-size:.76rem; cursor:pointer;
+    background:rgba(255,255,255,.16); color:#fff}
+  .mini-chip[aria-pressed="true"]{background:var(--prim-cont); color:var(--sobre-prim-cont)}
+  .destello{position:absolute; inset:0; background:#8CF9C2; opacity:0; pointer-events:none}
+  .destello.on{animation:flash .3s ease-out}
+  @keyframes flash{from{opacity:.45}to{opacity:0}}
+  .herramientas{position:absolute; top:10px; right:10px; display:flex; flex-direction:column; gap:8px}
+  .herramientas .icono-btn{background:rgba(0,0,0,.42); color:#fff}
+  .herramientas .icono-btn[aria-pressed="true"]{background:var(--prim-cont); color:var(--sobre-prim-cont)}
+
+  /* tarjeta de última lectura */
+  .ultima{
+    position:absolute; left:12px; right:12px; bottom:84px; background:var(--sup-cont-alto);
+    color:var(--sobre-superficie); border-radius:var(--r-m); padding:12px 14px; display:none;
+    box-shadow:0 3px 10px rgba(0,0,0,.28); align-items:center; gap:12px; text-align:left;
+    border:0; width:auto; font:inherit; cursor:pointer;
+  }
+  .ultima.visible{display:flex; animation:sube .22s ease-out}
+  @keyframes sube{from{transform:translateY(14px); opacity:0}to{transform:none; opacity:1}}
+  .ultima .av{width:40px; height:40px; flex:none; border-radius:50%; background:var(--prim-cont);
+    color:var(--sobre-prim-cont); display:grid; place-items:center}
+  .ultima .txt{flex:1; min-width:0}
+  .ultima .valor{font-family:var(--mono); font-size:1.02rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .ultima .sub{font-size:.78rem; color:var(--sobre-sup-var)}
+
+  /* ---- FAB ---- */
+  .fab{
+    position:absolute; right:16px; bottom:16px; z-index:4; border:0; cursor:pointer;
+    background:var(--prim-cont); color:var(--sobre-prim-cont); border-radius:var(--r-m);
+    height:56px; padding:0 20px; display:flex; align-items:center; gap:10px;
+    font:inherit; font-size:.95rem; font-weight:500; box-shadow:0 3px 8px rgba(0,0,0,.3);
+    overflow:hidden;
+  }
+  .fab:active{transform:scale(.97)}
+  .fab.detener{background:var(--err-cont); color:var(--sobre-err-cont)}
+
+  /* ---- listas ---- */
+  .encabezado{padding:14px 20px 6px; font-size:.82rem; color:var(--sobre-sup-var); font-weight:500}
+  .item{display:flex; align-items:center; gap:14px; padding:12px 16px; position:relative; overflow:hidden}
+  .item .av{width:40px; height:40px; flex:none; border-radius:50%; background:var(--prim-cont);
+    color:var(--sobre-prim-cont); display:grid; place-items:center; font-size:.78rem; font-weight:600}
+  .item .txt{flex:1; min-width:0}
+  .item .valor{font-family:var(--mono); font-size:1rem; word-break:break-all}
+  .item .sub{font-size:.78rem; color:var(--sobre-sup-var); margin-top:1px}
+  .item + .item{border-top:1px solid var(--contorno)}
+  .insignia{display:inline-block; background:var(--primario); color:var(--sobre-primario);
+    border-radius:20px; font-size:.7rem; padding:1px 7px; margin-left:6px; vertical-align:1px}
+  .fila-acciones{display:flex; gap:8px; padding:10px 16px 4px; flex-wrap:wrap}
+  .sin-nada{padding:52px 32px; text-align:center; color:var(--sobre-sup-var)}
+  .sin-nada svg{margin:0 auto 14px; opacity:.55}
+  .sin-nada p{margin:0; font-size:.9rem}
+
+  /* ---- botones Material ---- */
+  .btn{
+    border:0; border-radius:20px; height:40px; padding:0 18px; font:inherit; font-size:.88rem; font-weight:500;
+    background:var(--prim-cont); color:var(--sobre-prim-cont); cursor:pointer; position:relative; overflow:hidden;
+    display:inline-flex; align-items:center; gap:8px;
+  }
+  .btn.contorno{background:transparent; color:var(--primario); box-shadow:inset 0 0 0 1px var(--contorno)}
+  .btn.texto{background:transparent; color:var(--primario); padding:0 12px}
+  .btn:disabled{opacity:.38; cursor:not-allowed}
+
+  /* ---- ajustes ---- */
+  .seccion{margin:6px 12px 14px; background:var(--sup-cont); border-radius:var(--r-l); padding:6px 0}
+  .seccion h2{font-size:.82rem; color:var(--primario); font-weight:600; margin:12px 20px 6px}
+  .opcion{display:flex; align-items:center; gap:16px; padding:12px 20px; cursor:pointer; position:relative; overflow:hidden}
+  .opcion .txt{flex:1}
+  .opcion .titulo{font-size:.97rem}
+  .opcion .sub{font-size:.78rem; color:var(--sobre-sup-var)}
+  .switch{position:relative; width:52px; height:32px; flex:none}
+  .switch input{position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer}
+  .pista{position:absolute; inset:0; border-radius:16px; background:var(--sup-cont-alto);
+    box-shadow:inset 0 0 0 2px var(--contorno); transition:background .18s}
+  .pulgar{position:absolute; top:50%; left:6px; width:16px; height:16px; border-radius:50%;
+    background:var(--contorno); transform:translateY(-50%); transition:transform .18s, width .18s, height .18s, left .18s, background .18s}
+  .switch input:checked ~ .pista{background:var(--primario); box-shadow:inset 0 0 0 2px var(--primario)}
+  .switch input:checked ~ .pulgar{left:28px; width:24px; height:24px; background:var(--sobre-primario)}
+  .switch input:focus-visible ~ .pista{outline:2px solid var(--primario); outline-offset:3px}
+
+  .chips{display:flex; flex-wrap:wrap; gap:8px; padding:6px 20px 14px}
+  .chip{
+    border:0; box-shadow:inset 0 0 0 1px var(--contorno); background:transparent; color:var(--sobre-superficie);
+    border-radius:8px; height:34px; padding:0 14px; font:inherit; font-size:.85rem; cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px; position:relative; overflow:hidden;
+  }
+  .chip[aria-pressed="true"]{background:var(--prim-cont); color:var(--sobre-prim-cont); box-shadow:none}
+  .campo{display:flex; gap:8px; padding:6px 20px 16px; align-items:center}
+  .campo input[type=text]{
+    flex:1; min-width:0; font:inherit; font-size:.92rem; padding:12px 14px; color:var(--sobre-superficie);
+    background:var(--sup-cont-alto); border:0; border-radius:var(--r-xs); border-bottom:2px solid var(--contorno);
+  }
+  .campo input[type=text]:focus{outline:0; border-bottom-color:var(--primario)}
+  .zona{margin:0 20px 16px; border:1.5px dashed var(--contorno); border-radius:var(--r-s);
+    padding:18px; text-align:center; color:var(--sobre-sup-var); font-size:.85rem}
+  .zona.encima{border-color:var(--primario); background:var(--prim-cont); color:var(--sobre-prim-cont)}
+  .nota{margin:0 20px 14px; font-size:.78rem; color:var(--sobre-sup-var)}
+
+  /* ---- navegación inferior ---- */
+  .navbar{
+    flex:none; background:var(--sup-cont); display:flex; z-index:6;
+    padding-bottom:env(safe-area-inset-bottom, 0px); border-top:1px solid var(--contorno);
+  }
+  .nav-item{
+    flex:1; background:transparent; border:0; cursor:pointer; color:var(--sobre-sup-var);
+    padding:10px 0 12px; display:flex; flex-direction:column; align-items:center; gap:4px;
+    font:inherit; font-size:.72rem; font-weight:500; position:relative; overflow:hidden;
+  }
+  .nav-item .pastilla{width:64px; height:32px; border-radius:16px; display:grid; place-items:center; transition:background .16s}
+  .nav-item[aria-selected="true"]{color:var(--sobre-prim-cont)}
+  .nav-item[aria-selected="true"] .pastilla{background:var(--prim-cont)}
+  .nav-item .conteo{position:absolute; top:6px; right:calc(50% - 26px); background:var(--error); color:#fff;
+    border-radius:10px; font-size:.65rem; padding:0 5px; min-width:16px; height:16px; line-height:16px; display:none}
+  .nav-item .conteo.visible{display:block}
+
+  /* ---- ripple, snackbar, hoja ---- */
+  .onda{position:absolute; border-radius:50%; background:var(--ripple); transform:scale(0); opacity:1;
+    animation:onda .5s ease-out forwards; pointer-events:none}
+  @keyframes onda{to{transform:scale(2.4); opacity:0}}
+  .snack{
+    position:fixed; left:12px; right:12px; bottom:calc(var(--alto-nav, 68px) + 12px);
+    background:var(--sup-cont-alto); color:var(--sobre-superficie); border-radius:var(--r-xs);
+    padding:14px 16px; font-size:.88rem; box-shadow:0 4px 14px rgba(0,0,0,.35); z-index:20;
+    transform:translateY(160%); max-width:520px; margin:0 auto; cursor:pointer;
+    opacity:0; visibility:hidden; pointer-events:none;
+    transition:transform .22s ease-out, opacity .16s ease-out, visibility 0s linear .22s;
+  }
+  .snack.visible{
+    transform:none; opacity:1; visibility:visible; pointer-events:auto;
+    transition:transform .22s ease-out, opacity .16s ease-out;
+  }
+  /* en la pantalla de escaneo el espacio de abajo es del botón y de la última lectura */
+  .snack.arriba{
+    bottom:auto; top:calc(var(--alto-barra, 56px) + 10px); right:64px; left:12px;
+    transform:translateY(-180%);
+  }
+  .snack.arriba.visible{transform:none; opacity:1; visibility:visible}
+  .snack.malo{background:var(--err-cont); color:var(--sobre-err-cont)}
+  @media (prefers-reduced-motion:reduce){.snack{transition:none}}
+  .tarjeta-instalar{
+    margin:10px 12px 0; background:var(--prim-cont); color:var(--sobre-prim-cont);
+    border-radius:var(--r-m); padding:14px 16px; display:none; align-items:center; gap:12px;
+  }
+  .tarjeta-instalar.visible{display:flex}
+  .tarjeta-instalar .txt{flex:1}
+  .tarjeta-instalar .titulo{font-weight:500}
+  .tarjeta-instalar .sub{font-size:.78rem; opacity:.85}
+  .tarjeta-instalar .btn{background:var(--sobre-prim-cont); color:var(--prim-cont)}
+  :focus-visible{outline:2px solid var(--primario); outline-offset:2px}
+
+  /* ---- hoja inferior y diálogos ---- */
+  .velo{position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:30; display:none}
+  .velo.visible{display:block}
+  .velo2{z-index:32}
+  .hoja-modal{
+    position:fixed; left:0; right:0; bottom:0; z-index:31; background:var(--sup-cont);
+    border-radius:28px 28px 0 0; max-height:88%; display:none; flex-direction:column;
+    padding-bottom:env(safe-area-inset-bottom,0px); max-width:640px; margin:0 auto;
+  }
+  .hoja-modal.visible{display:flex; animation:subeHoja .22s ease-out}
+  @keyframes subeHoja{from{transform:translateY(100%)}to{transform:none}}
+  @media (prefers-reduced-motion:reduce){.hoja-modal.visible{animation:none}}
+  .hoja-modal .asa{width:34px; height:4px; border-radius:2px; background:var(--contorno); margin:12px auto 6px}
+  .hoja-modal h3{margin:4px 20px 2px; font-size:1.06rem; font-weight:600}
+  .hoja-modal .aclara{margin:0 20px 10px; font-size:.83rem; color:var(--sobre-sup-var)}
+  .hoja-modal .cuerpo{overflow-y:auto; flex:1}
+  .hoja-modal .acciones{display:flex; justify-content:flex-end; gap:8px; padding:12px 16px; border-top:1px solid var(--contorno)}
+  .dialogo{
+    position:fixed; left:16px; right:16px; top:50%; transform:translateY(-50%); z-index:33;
+    background:var(--sup-cont-alto); border-radius:28px; padding:22px 22px 14px; max-width:420px;
+    margin:0 auto; display:none; box-shadow:0 6px 24px rgba(0,0,0,.4);
+  }
+  .dialogo.visible{display:block}
+  .dialogo h3{margin:0 0 8px; font-size:1.06rem; font-weight:600}
+  .dialogo p{margin:0 0 14px; font-size:.9rem; color:var(--sobre-sup-var)}
+  .dialogo .acciones{display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap}
+  .dialogo .acciones.columna{flex-direction:column; align-items:stretch}
+  .dialogo .acciones.columna .btn{height:auto; min-height:46px; padding:11px 16px;
+    justify-content:center; text-align:center; line-height:1.3}
+  .dialogo input[type=text]{width:100%; font:inherit; font-size:.95rem; padding:12px 14px; margin-bottom:14px;
+    border:0; border-radius:10px; background:var(--sup-cont); color:var(--sobre-superficie);
+    border-bottom:2px solid var(--contorno); font-family:var(--mono)}
+
+  .codigo-grande{font-family:var(--mono); font-size:1.1rem; margin:0 20px 12px; word-break:break-all;
+    background:var(--prim-cont); color:var(--sobre-prim-cont); padding:11px 14px; border-radius:12px}
+  .buscador{padding:2px 16px 10px}
+  .buscador input{width:100%; font:inherit; font-size:.95rem; padding:12px 14px; border:0; border-radius:12px;
+    background:var(--sup-cont-alto); color:var(--sobre-superficie)}
+  .persona{display:flex; align-items:center; gap:13px; padding:12px 18px; cursor:pointer; position:relative; overflow:hidden}
+  .persona + .persona{border-top:1px solid var(--contorno)}
+  .persona .av{width:38px; height:38px; flex:none; border-radius:50%; background:var(--sup-cont-alto);
+    color:var(--sobre-sup-var); display:grid; place-items:center; font-size:.85rem; font-weight:600}
+  .persona.con .av{background:var(--prim-cont); color:var(--sobre-prim-cont)}
+  .persona .txt{flex:1; min-width:0}
+  .persona .nom{font-size:.97rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .persona .cod{font-family:var(--mono); font-size:.8rem; color:var(--primario); word-break:break-all}
+  .persona .nada{font-size:.78rem; color:var(--sobre-sup-var)}
+  .alerta{margin:0 20px 12px; background:var(--err-cont); color:var(--sobre-err-cont);
+    border-radius:12px; padding:11px 14px; font-size:.86rem; line-height:1.35}
+  .insignia.dup{background:var(--error); color:var(--sup-cont)}
+  .persona.dup{box-shadow:inset 3px 0 0 var(--error)}
+  .resumen{display:flex; gap:10px; align-items:baseline; padding:10px 20px 2px; font-size:.84rem; color:var(--sobre-sup-var)}
+  .resumen b{color:var(--sobre-superficie); font-size:1.1rem; font-weight:600}
+  .campo-cfg{padding:6px 20px 12px}
+  .campo-cfg label{display:block; font-size:.78rem; color:var(--sobre-sup-var); margin-bottom:5px}
+  .campo-cfg select, .campo-cfg input{width:100%; font:inherit; font-size:.92rem; padding:11px 12px;
+    border:1px solid var(--contorno); border-radius:10px; background:var(--sup-cont-alto); color:var(--sobre-superficie)}
+  .nav-item{font-size:.68rem}
+  .nav-item .pastilla{width:58px}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <header class="appbar">
+    <div class="contenido">
+      <h1 id="titulo">Lector de códigos</h1>
+      <button class="icono-btn" id="btnExcel" title="Descargar Excel actualizado" hidden aria-label="Descargar Excel actualizado">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M12 3v11m0 0 4-4m-4 4-4-4"></path><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path>
+        </svg>
+      </button>
+      <button class="icono-btn" id="btnCargar" title="Cargar lista de Excel" hidden aria-label="Cargar lista de Excel">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M12 21V10m0 0 4 4m-4-4-4 4"></path><path d="M4 7V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2"></path>
+        </svg>
+      </button>
+      <button class="icono-btn" id="btnGaleria" title="Leer desde una imagen" aria-label="Leer desde una imagen">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="3" y="4" width="18" height="16" rx="2.5"></rect>
+          <path d="M3 16l5-5 4 4 3-3 6 6"></path><circle cx="9" cy="9" r="1.4"></circle>
+        </svg>
+      </button>
+      <button class="icono-btn" id="btnCopiarTodo" title="Copiar todos" hidden aria-label="Copiar todos">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="9" y="9" width="11" height="12" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h8"></path>
+        </svg>
+      </button>
+      <button class="icono-btn" id="btnCsv" title="Descargar CSV" hidden aria-label="Descargar CSV">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M12 3v11m0 0 4-4m-4 4-4-4"></path><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path>
+        </svg>
+      </button>
+      <button class="icono-btn" id="btnVaciar" title="Vaciar lista" hidden aria-label="Vaciar lista">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+          <path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"></path>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ============ ESCANEAR ============ -->
+    <section class="vista activa" id="v-escanear">
+      <div class="camara" id="camara">
+        <video id="video" playsinline muted></video>
+        <div class="reposo">
+          <svg width="132" height="132" viewBox="0 0 24 24" fill="none" stroke="#3A4A41" stroke-width="1.4">
+            <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"></path>
+            <path d="M7 8v8M10 8v8M13 8v8M17 8v8" stroke-width="1.8"></path>
+          </svg>
+          <p id="textoReposo">Toca Escanear. Llena el recuadro con el código, con buena luz y la cámara firme.</p>
+        </div>
+        <div class="marco">
+          <div class="ventana">
+            <span class="esq q1"></span><span class="esq q2"></span><span class="esq q3"></span><span class="esq q4"></span>
+            <div class="rayo"></div>
+          </div>
+        </div>
+        <div class="destello" id="destello"></div>
+
+        <div class="herramientas">
+          <button class="icono-btn" id="btnLuz" aria-pressed="false" aria-label="Linterna" hidden>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4 14h6l-1 8 9-12h-6z"></path></svg>
+          </button>
+          <button class="icono-btn" id="btnCambiar" aria-label="Cambiar de lente" hidden>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M4 8h12l-2-2M20 16H8l2 2"></path><circle cx="12" cy="12" r="0.1"></circle>
+              <rect x="3" y="10" width="18" height="4" rx="1" opacity=".0"></rect>
+            </svg>
+          </button>
+        </div>
+
+        <div class="controles-camara" id="panelCamara" hidden>
+          <div class="control" id="zoomCaja" hidden>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="10.5" cy="10.5" r="6.5"></circle><path d="M20 20l-4.8-4.8M10.5 7.5v6M7.5 10.5h6"></path>
+            </svg>
+            <input type="range" id="zoom" min="1" max="4" step="0.1" value="1" aria-label="Acercamiento">
+            <span id="zoomTexto">1.0×</span>
+          </div>
+          <div class="control" id="focoCaja" hidden>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"></path>
+              <circle cx="12" cy="12" r="2.5"></circle>
+            </svg>
+            <input type="range" id="foco" min="0" max="1" step="0.01" value="0" aria-label="Enfoque manual">
+            <button class="mini-chip" id="focoAuto" aria-pressed="true">Auto</button>
+          </div>
+        </div>
+
+        <button class="ultima" id="ultima">
+          <span class="av">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M5 6v12M8 6v12M11 6v12M14 6v12M17 6v12M20 6v12" stroke-width="1.6"></path>
+            </svg>
+          </span>
+          <span class="txt">
+            <span class="valor" id="ultimaValor"></span>
+            <span class="sub" id="ultimaSub"></span>
+          </span>
+        </button>
+      </div>
+
+      <button class="fab" id="fab">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" id="fabIcono">
+          <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"></path>
+          <path d="M4 12h16"></path>
+        </svg>
+        <span id="fabTexto">Escanear</span>
+      </button>
+    </section>
+
+    <!-- ============ LISTA ============ -->
+    <section class="vista" id="v-lista">
+      <div class="desplaza">
+        <div class="tarjeta-instalar" id="tarjetaInstalar">
+          <div class="txt">
+            <div class="titulo">Instalar en el inicio</div>
+            <div class="sub">Se abre como aplicación, a pantalla completa y sin conexión.</div>
+          </div>
+          <button class="btn" id="btnInstalar">Instalar</button>
+        </div>
+        <div class="encabezado" id="encabezadoLista">Lecturas</div>
+        <div id="lista"></div>
+        <div class="sin-nada" id="sinNada">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3">
+            <path d="M5 6v12M8 6v12M11 6v12M14 6v12M17 6v12M20 6v12"></path>
+          </svg>
+          <p>Todavía no hay lecturas. Escanea un código y aparecerá aquí.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ AJUSTES ============ -->
+    <section class="vista" id="v-ajustes">
+      <div class="desplaza">
+
+        <div class="seccion">
+          <h2>Qué códigos buscar</h2>
+          <div class="chips" id="chips">
+            <button class="chip" data-modo="1d" aria-pressed="true">Códigos de barras</button>
+            <button class="chip" data-modo="2d" aria-pressed="false">QR y matriciales</button>
+            <button class="chip" data-modo="todos" aria-pressed="false">Todo</button>
+          </div>
+          <p class="nota">Elegir un solo tipo hace la lectura más rápida y con menos errores.</p>
+        </div>
+
+        <div class="seccion">
+          <h2>Al leer un código</h2>
+          <label class="opcion">
+            <span class="txt"><span class="titulo">Sonido</span><span class="sub">Un pitido por cada lectura</span></span>
+            <span class="switch"><input type="checkbox" id="chkSonido" checked><span class="pista"></span><span class="pulgar"></span></span>
+          </label>
+          <label class="opcion">
+            <span class="txt"><span class="titulo">Vibración</span><span class="sub">Confirma sin mirar la pantalla</span></span>
+            <span class="switch"><input type="checkbox" id="chkVibrar" checked><span class="pista"></span><span class="pulgar"></span></span>
+          </label>
+          <label class="opcion">
+            <span class="txt"><span class="titulo">Seguir leyendo</span><span class="sub">No apagar la cámara tras cada código</span></span>
+            <span class="switch"><input type="checkbox" id="chkContinuo" checked><span class="pista"></span><span class="pulgar"></span></span>
+          </label>
+          <label class="opcion">
+            <span class="txt"><span class="titulo">Agrupar repetidos</span><span class="sub">Suma un contador en vez de duplicar la línea</span></span>
+            <span class="switch"><input type="checkbox" id="chkUnicos" checked><span class="pista"></span><span class="pulgar"></span></span>
+          </label>
+          <label class="opcion">
+            <span class="txt"><span class="titulo">Códigos en negativo</span><span class="sub">Buscar también barras blancas sobre fondo negro</span></span>
+            <span class="switch"><input type="checkbox" id="chkNegativo" checked><span class="pista"></span><span class="pulgar"></span></span>
+          </label>
+        </div>
+
+        <div class="seccion">
+          <h2>Lista de personas</h2>
+          <label class="opcion">
+            <span class="txt"><span class="titulo">Asignar al leer</span><span class="sub">Preguntar a quién corresponde cada código</span></span>
+            <span class="switch"><input type="checkbox" id="chkAsignar" checked><span class="pista"></span><span class="pulgar"></span></span>
+          </label>
+          <div class="campo">
+            <button class="btn contorno" id="btnCargarAjustes">Cargar o cambiar el Excel</button>
+            <button class="btn texto" id="btnQuitarLista">Quitar lista</button>
+          </div>
+        </div>
+
+        <div class="seccion">
+          <h2>Capturar sin cámara</h2>
+          <div class="zona" id="zona">
+            <input type="file" id="archivo" accept="image/*" multiple hidden>
+            <button class="btn contorno" id="btnArchivo">Elegir imágenes guardadas</button>
+            <div style="margin-top:8px">o arrastra las fotos aquí. También está el icono de imagen en la barra superior.</div>
+          </div>
+          <div class="campo">
+            <input type="text" id="manual" placeholder="Escribe o escanea con lector USB" autocomplete="off" inputmode="text">
+            <button class="btn" id="btnManual">Agregar</button>
+          </div>
+        </div>
+
+        <div class="seccion">
+          <h2>Acerca de</h2>
+          <div class="opcion" id="filaInstalar" style="cursor:default">
+            <span class="txt"><span class="titulo">Instalación</span><span class="sub" id="estadoInstalar">Comprobando…</span></span>
+            <button class="btn" id="btnInstalar2" hidden>Instalar</button>
+          </div>
+          <div class="opcion" style="cursor:default">
+            <span class="txt"><span class="titulo">Componentes</span><span class="sub" id="estadoLibs">Comprobando…</span></span>
+          </div>
+          <div class="opcion" style="cursor:default">
+            <span class="txt"><span class="titulo">Privacidad</span><span class="sub">Las imágenes se procesan en el dispositivo; nada se envía a internet.</span></span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============ PERSONAS ============ -->
+    <section class="vista" id="v-personas">
+      <div class="desplaza">
+        <div id="sinLista" class="sin-nada">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3">
+            <rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18M9 9v11"></path>
+          </svg>
+          <p>Carga un Excel con la lista de personas. Al leer un código, la app te preguntará a quién asignárselo.</p>
+          <div style="margin-top:16px"><button class="btn" id="btnCargarVacio">Cargar archivo de Excel</button></div>
+        </div>
+
+        <div id="conLista" hidden>
+          <div class="resumen">
+            <span><b id="numCodigos">0</b> códigos</span>
+            <span><b id="numAsignados">0</b> de <b id="numTotal">0</b> personas</span>
+          </div>
+          <div class="encabezado" id="nombreArchivo"></div>
+          <div class="chips" id="filtros">
+            <button class="chip" data-filtro="todos" aria-pressed="true">Todas</button>
+            <button class="chip" data-filtro="sin" aria-pressed="false">Sin código</button>
+            <button class="chip" data-filtro="con" aria-pressed="false">Con código</button>
+          </div>
+          <div class="buscador"><input type="text" id="buscaPersona" placeholder="Buscar persona" autocomplete="off"></div>
+          <div id="listaPersonas"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="navbar" role="tablist">
+    <button class="nav-item" data-vista="escanear" aria-selected="true" role="tab">
+      <span class="pastilla">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"></path>
+          <path d="M4 12h16"></path>
+        </svg>
+      </span>
+      Escanear
+    </button>
+    <button class="nav-item" data-vista="personas" aria-selected="false" role="tab">
+      <span class="pastilla">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <circle cx="9" cy="8" r="3.2"></circle><path d="M3.5 19a5.5 5.5 0 0 1 11 0"></path>
+          <path d="M17 8h4M17 12h4M17 16h4" stroke-width="1.5"></path>
+        </svg>
+      </span>
+      Personas
+    </button>
+    <button class="nav-item" data-vista="lista" aria-selected="false" role="tab">
+      <span class="pastilla">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M8 7h12M8 12h12M8 17h12M4 7h.01M4 12h.01M4 17h.01"></path>
+        </svg>
+      </span>
+      Lecturas
+      <span class="conteo" id="globo">0</span>
+    </button>
+    <button class="nav-item" data-vista="ajustes" aria-selected="false" role="tab">
+      <span class="pastilla">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M5 7h14M5 17h14"></path><circle cx="10" cy="7" r="2.4"></circle><circle cx="15" cy="17" r="2.4"></circle>
+        </svg>
+      </span>
+      Ajustes
+    </button>
+  </nav>
+
+</div>
+
+<input type="file" id="archivoExcel" accept=".xlsx,.xlsm,.csv" hidden>
+
+<div class="velo" id="velo"></div>
+<div class="hoja-modal" id="hojaModal" role="dialog" aria-modal="true">
+  <div class="asa"></div>
+  <h3 id="hojaTitulo"></h3>
+  <p class="aclara" id="hojaAclara"></p>
+  <div class="cuerpo" id="hojaCuerpo"></div>
+  <div class="acciones" id="hojaAcciones"></div>
+</div>
+
+<div class="velo velo2" id="velo2"></div>
+<div class="dialogo" id="dialogo" role="alertdialog" aria-modal="true">
+  <h3 id="dlgTitulo"></h3>
+  <p id="dlgTexto"></p>
+  <div id="dlgExtra"></div>
+  <div class="acciones" id="dlgAcciones"></div>
+</div>
+
+<div class="snack" id="snack" role="status"></div>
+
+<script src="zxing.min.js"></script>
+<script src="xlsx.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  var Z = window.ZXing;
+  var $ = function(id){ return document.getElementById(id); };
+
+  var camara=$('camara'), video=$('video'), destello=$('destello'), fab=$('fab'),
+      fabTexto=$('fabTexto'), btnLuz=$('btnLuz'), btnCambiar=$('btnCambiar'),
+      lista=$('lista'), sinNada=$('sinNada'), globo=$('globo'), titulo=$('titulo'),
+      snack=$('snack'), ultima=$('ultima'), ultimaValor=$('ultimaValor'), ultimaSub=$('ultimaSub'),
+      manual=$('manual'), archivo=$('archivo'), zona=$('zona'),
+      chkSonido=$('chkSonido'), chkVibrar=$('chkVibrar'), chkContinuo=$('chkContinuo'), chkUnicos=$('chkUnicos'),
+      zoomCaja=$('zoomCaja'), zoom=$('zoom'), zoomTexto=$('zoomTexto'), chkNegativo=$('chkNegativo'),
+      panelCamara=$('panelCamara'), focoCaja=$('focoCaja'), foco=$('foco'), focoAuto=$('focoAuto');
+
+  var candado=null;
+  async function pantallaEncendida(si){
+    try{
+      if(si && 'wakeLock' in navigator && !candado){ candado=await navigator.wakeLock.request('screen'); }
+      else if(!si && candado){ await candado.release(); candado=null; }
+    }catch(e){ candado=null; }
+  }
+  var activo=false, pista=null, luz=false, camaras=[], iCamara=0, modo='1d';
+  var lecturas=[], ultimoLeido={v:'',t:0};
+  var CLAVE='lector-codigos-v2';
+
+  /* ===== formatos ===== */
+  var UNO_D=['EAN_13','EAN_8','UPC_A','UPC_E','CODE_128','CODE_39','CODE_93','ITF','CODABAR','RSS_14'];
+  var DOS_D=['QR_CODE','DATA_MATRIX','PDF_417','AZTEC'];
+  var NOMBRES={EAN_13:'EAN-13',EAN_8:'EAN-8',UPC_A:'UPC-A',UPC_E:'UPC-E',CODE_128:'Code 128',CODE_39:'Code 39',
+    CODE_93:'Code 93',ITF:'ITF',CODABAR:'Codabar',RSS_14:'GS1 DataBar',
+    QR_CODE:'QR',DATA_MATRIX:'DataMatrix',PDF_417:'PDF417',AZTEC:'Aztec'};
+  var NATIVOS={EAN_13:'ean_13',EAN_8:'ean_8',UPC_A:'upc_a',UPC_E:'upc_e',CODE_128:'code_128',CODE_39:'code_39',
+    CODE_93:'code_93',ITF:'itf',CODABAR:'codabar',QR_CODE:'qr_code',DATA_MATRIX:'data_matrix',
+    PDF_417:'pdf417',AZTEC:'aztec'};
+  function claves(){ return modo==='1d'?UNO_D : (modo==='2d'?DOS_D : UNO_D.concat(DOS_D)); }
+  function formatosZX(){
+    var s=[];
+    claves().forEach(function(k){ if(Z.BarcodeFormat[k]!==undefined) s.push(Z.BarcodeFormat[k]); });
+    return s;
+  }
+  function pistasZX(){
+    var h=new Map();
+    h.set(Z.DecodeHintType.POSSIBLE_FORMATS, formatosZX());
+    h.set(Z.DecodeHintType.TRY_HARDER, true);
+    return h;
+  }
+  function nombreFormato(f){ var e=Z.BarcodeFormat[f]; return NOMBRES[e] || String(e||'Código'); }
+  function nombreNativo(f){
+    for(var k in NATIVOS){ if(NATIVOS[k]===f) return NOMBRES[k]||k; }
+    return String(f||'Código');
+  }
+
+  /* ===== snackbar ===== */
+  var relojSnack=null;
+  function avisar(texto, malo){
+    snack.textContent=texto;
+    snack.classList.toggle('malo', !!malo);
+    snack.classList.add('visible');
+    clearTimeout(relojSnack);
+    relojSnack=setTimeout(function(){ snack.classList.remove('visible'); }, malo?5000:3200);
+  }
+  snack.addEventListener('click', function(){ snack.classList.remove('visible'); });
+
+  /* medidas reales de las barras, para que el aviso nunca las tape */
+  function medirBarras(){
+    var raiz=document.documentElement.style;
+    var nav=document.querySelector('.navbar'), barra=document.querySelector('.appbar');
+    if(nav) raiz.setProperty('--alto-nav', nav.offsetHeight+'px');
+    if(barra) raiz.setProperty('--alto-barra', barra.offsetHeight+'px');
+  }
+  window.addEventListener('resize', medirBarras);
+  window.addEventListener('orientationchange', function(){ setTimeout(medirBarras, 200); });
+
+  /* ===== ondas (ripple) ===== */
+  document.addEventListener('pointerdown', function(e){
+    var o=e.target.closest('.btn,.nav-item,.icono-btn,.item,.opcion,.chip,.fab,.ultima');
+    if(!o) return;
+    var r=o.getBoundingClientRect(), d=Math.max(r.width,r.height), s=document.createElement('span');
+    s.className='onda';
+    s.style.width=s.style.height=d+'px';
+    s.style.left=(e.clientX-r.left-d/2)+'px';
+    s.style.top=(e.clientY-r.top-d/2)+'px';
+    if (getComputedStyle(o).position==='static') o.style.position='relative';
+    o.appendChild(s);
+    setTimeout(function(){ s.remove(); }, 520);
+  }, {passive:true});
+
+  /* ===== navegación ===== */
+  var TITULOS={escanear:'Lector de códigos', personas:'Personas', lista:'Lecturas', ajustes:'Ajustes'};
+  function ir(nombre){
+    document.querySelectorAll('.vista').forEach(function(v){ v.classList.toggle('activa', v.id==='v-'+nombre); });
+    document.querySelectorAll('.nav-item').forEach(function(b){ b.setAttribute('aria-selected', String(b.dataset.vista===nombre)); });
+    titulo.textContent=TITULOS[nombre];
+    var enLista = nombre==='lista';
+    ['btnCopiarTodo','btnCsv','btnVaciar'].forEach(function(id){ $(id).hidden = !(enLista && lecturas.length); });
+    snack.classList.toggle('arriba', nombre==='escanear');
+    $('btnGaleria').hidden = nombre!=='escanear';
+    $('btnCargar').hidden = nombre!=='personas';
+    $('btnExcel').hidden = !(nombre==='personas' && personas.length);
+    if (nombre!=='escanear' && activo) apagar(true);
+  }
+  document.querySelectorAll('.nav-item').forEach(function(b){
+    b.addEventListener('click', function(){ ir(b.dataset.vista); });
+  });
+
+  /* ===== cámara y motor de lectura ===== */
+  var lienzo=document.createElement('canvas');
+  var pincel=lienzo.getContext('2d', {willReadFrequently:true});
+  var lienzoFoto=document.createElement('canvas');
+  var pincelFoto=lienzoFoto.getContext('2d', {willReadFrequently:true});
+  var detector=null, detectorModo=null, zxing=null, zxingModo=null, reloj=null, pasada=0, flujo=null;
+  var PERFIL={ width:{ideal:1920}, height:{ideal:1080}, frameRate:{ideal:30} };
+
+  function hayCamara(){ return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia); }
+
+  async function obtenerDetector(){
+    if(detectorModo===modo) return detector;
+    detector=null; detectorModo=modo;
+    try{
+      if('BarcodeDetector' in window && window.BarcodeDetector.getSupportedFormats){
+        var soportados=await window.BarcodeDetector.getSupportedFormats();
+        var pedidos=claves().map(function(k){ return NATIVOS[k]; })
+          .filter(function(f){ return f && soportados.indexOf(f)>=0; });
+        if(pedidos.length) detector=new window.BarcodeDetector({formats:pedidos});
+      }
+    }catch(e){ detector=null; }
+    return detector;
+  }
+  function obtenerZXing(){
+    if(!zxing) zxing=new Z.MultiFormatReader();
+    if(zxingModo!==modo){ zxing.setHints(pistasZX()); zxingModo=modo; }
+    return zxing;
+  }
+  async function prepararMotores(){ await obtenerDetector(); obtenerZXing(); }
+
+  function esFrontalPorNombre(etiqueta){
+    var e=(etiqueta||'').toLowerCase();
+    return e.indexOf('front')>=0 || e.indexOf('frontal')>=0 || e.indexOf('selfie')>=0 ||
+           e.indexOf('facing user')>=0 || e.indexOf('delantera')>=0;
+  }
+  async function listar(){
+    try{
+      var t=await navigator.mediaDevices.enumerateDevices();
+      var todas=t.filter(function(d){ return d.kind==='videoinput' && d.deviceId; });
+      var traseras=todas.filter(function(d){ return !esFrontalPorNombre(d.label); });
+      camaras = traseras.length ? traseras : todas;
+      if(iCamara>=camaras.length) iCamara=0;
+      var pref=lenteGuardado();
+      for(var q=0;q<camaras.length;q++){ if(camaras[q].deviceId===pref){ iCamara=q; break; } }
+      btnCambiar.hidden = camaras.length<2;
+    }catch(e){ btnCambiar.hidden=true; }
+  }
+  var CLAVE_LENTE='lector-codigos-lente';
+  function lenteGuardado(){ try{ return localStorage.getItem(CLAVE_LENTE)||''; }catch(e){ return ''; } }
+  function guardarLente(id){ try{ if(id) localStorage.setItem(CLAVE_LENTE, id); }catch(e){} }
+
+  function puntajeLente(c, etiqueta){
+    var p=0, e=(etiqueta||'').toLowerCase();
+    if(c.focusMode && c.focusMode.indexOf('continuous')>=0) p+=100;   // enfoque automático real
+    if(c.focusDistance) p+=20;                                         // admite enfoque manual
+    if('torch' in c) p+=15;                                            // la principal suele tener flash
+    if(c.width && c.width.max) p+=Math.min(c.width.max, 4000)/100;
+    if(/camera2 0\b|camera 0\b|^0,/.test(e)) p+=30;                  // en Android suele ser la principal
+    if(e.indexOf('ultra')>=0 || e.indexOf('wide')>=0) p-=60;
+    if(e.indexOf('tele')>=0) p-=15;
+    return p;
+  }
+
+  async function calibrarLente(){
+    var mejor=-1, mejorP=-1e9;
+    for(var j=0;j<camaras.length && j<5;j++){
+      var prueba=null;
+      try{
+        prueba=await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:camaras[j].deviceId}}});
+        var t=prueba.getVideoTracks()[0];
+        var cap=(t && t.getCapabilities) ? t.getCapabilities() : {};
+        var pts=puntajeLente(cap, camaras[j].label);
+        if(pts>mejorP){ mejorP=pts; mejor=j; }
+      }catch(e){}
+      if(prueba) prueba.getTracks().forEach(function(x){ x.stop(); });
+    }
+    if(mejor>=0) guardarLente(camaras[mejor].deviceId);
+    return mejor;
+  }
+
+  function usandoFrontal(){
+    try{
+      var a=pista.getSettings();
+      if(a && a.facingMode) return a.facingMode==='user';
+      return esFrontalPorNombre(pista.label);
+    }catch(e){ return false; }
+  }
+
+  async function abrirFlujo(){
+    var fino=PERFIL;
+    var intentos=[];
+    var elegida=camaras[iCamara] && camaras[iCamara].deviceId;
+    if(elegida) intentos.push({video:Object.assign({deviceId:{exact:elegida}}, fino)});
+    intentos.push({video:Object.assign({facingMode:{exact:'environment'}}, fino)});
+    intentos.push({video:{facingMode:{exact:'environment'}}});
+    intentos.push({video:Object.assign({facingMode:{ideal:'environment'}}, fino)});
+    if(!elegida) intentos.push({video:true});
+    var err=null;
+    for(var k=0;k<intentos.length;k++){
+      try{ return await navigator.mediaDevices.getUserMedia(intentos[k]); }
+      catch(e){
+        err=e;
+        var n=(e&&e.name)||'';
+        if(n==='NotAllowedError' || n==='SecurityError') break;
+      }
+    }
+    throw (err || new Error('sin cámara'));
+  }
+
+  async function encender(){
+    if(!hayCamara()){ avisar('Este navegador no permite abrir la cámara aquí.', true); return; }
+    fab.disabled=true; fabTexto.textContent='Abriendo…';
+    try{
+      await prepararMotores();
+      flujo=await abrirFlujo();
+      video.srcObject=flujo;
+      video.setAttribute('playsinline','');
+      try{ await video.play(); }catch(e){}
+      pista=flujo.getVideoTracks()[0];
+      if(usandoFrontal()){
+        await listar();
+        var trasera=null;
+        for(var i=0;i<camaras.length;i++){
+          if(!esFrontalPorNombre(camaras[i].label)){ trasera=camaras[i]; iCamara=i; break; }
+        }
+        if(trasera && trasera.deviceId){
+          try{
+            flujo.getTracks().forEach(function(t){ t.stop(); });
+            flujo=await navigator.mediaDevices.getUserMedia({video:Object.assign({deviceId:{exact:trasera.deviceId}}, PERFIL)});
+            video.srcObject=flujo;
+            try{ await video.play(); }catch(e2){}
+            pista=flujo.getVideoTracks()[0];
+          }catch(e3){}
+        }
+      }
+      if(!lenteGuardado()){
+        await listar();
+        if(camaras.length>1){
+          fabTexto.textContent='Probando lentes…';
+          avisar('Eligiendo el lente que mejor enfoca (sólo esta vez)…');
+          flujo.getTracks().forEach(function(t){ t.stop(); });
+          var elegido=await calibrarLente();
+          if(elegido>=0) iCamara=elegido;
+          flujo=await abrirFlujo();
+          video.srcObject=flujo;
+          try{ await video.play(); }catch(e4){}
+          pista=flujo.getVideoTracks()[0];
+        } else if(camaras.length===1) guardarLente(camaras[0].deviceId);
+      }
+      activo=true;
+      ultimoExito=Date.now();
+      camara.classList.add('activo');
+      fab.classList.add('detener'); fabTexto.textContent='Detener';
+      ajustarCamara();
+      pantallaEncendida(true);
+      await listar();
+      pasada=0;
+      ciclo();
+    }catch(e){
+      var n=(e&&e.name)||'';
+      if(n==='NotAllowedError') avisar('Falta el permiso de cámara. Ábrelo en el candado de la barra de direcciones.', true);
+      else if(n==='NotFoundError') avisar('No se encontró ninguna cámara.', true);
+      else if(n==='NotReadableError') avisar('Otra aplicación está usando la cámara. Ciérrala e intenta de nuevo.', true);
+      else if(n==='OverconstrainedError') avisar('Esa cámara no está disponible. Toca el icono de cambiar cámara y prueba otra.', true);
+      else avisar('No se pudo abrir la cámara: '+(e&&e.message?e.message:n), true);
+      apagar(true);
+    }finally{
+      fab.disabled=false;
+      if(!activo) fabTexto.textContent='Escanear';
+    }
+  }
+
+  function apagar(silencioso){
+    clearTimeout(reloj); reloj=null;
+    try{ if(flujo) flujo.getTracks().forEach(function(t){ t.stop(); }); }catch(e){}
+    try{ video.srcObject=null; }catch(e){}
+    flujo=null; activo=false; pista=null; luz=false;
+    pantallaEncendida(false);
+    camara.classList.remove('activo');
+    btnLuz.hidden=true; btnLuz.setAttribute('aria-pressed','false');
+    zoomCaja.hidden=true; focoCaja.hidden=true; panelCamara.hidden=true;
+    focoManual=false;
+    fab.classList.remove('detener'); fabTexto.textContent='Escanear';
+    if(!silencioso) ultima.classList.remove('visible');
+  }
+
+  function capacidades(){
+    try{ return (pista && pista.getCapabilities) ? pista.getCapabilities() : null; }catch(e){ return null; }
+  }
+
+  function ajustarCamara(){
+    var c=capacidades();
+    btnLuz.hidden=!(c && 'torch' in c);
+    try{
+      if(c && c.focusMode && c.focusMode.indexOf('continuous')>=0){
+        pista.applyConstraints({advanced:[{focusMode:'continuous'}]});
+      }
+    }catch(e){}
+    if(c && c.zoom && c.zoom.max>c.zoom.min){
+      zoom.min=c.zoom.min; zoom.max=c.zoom.max; zoom.step=c.zoom.step||0.1;
+      var aj={}; try{ aj=pista.getSettings(); }catch(e){}
+      zoom.value=aj.zoom||c.zoom.min;
+      zoomTexto.textContent=Number(zoom.value).toFixed(1)+'\u00D7';
+      zoomCaja.hidden=false;
+    } else zoomCaja.hidden=true;
+
+    var puedeManual = c && c.focusDistance && c.focusDistance.max>c.focusDistance.min &&
+                      c.focusMode && c.focusMode.indexOf('manual')>=0;
+    if(puedeManual){
+      foco.min=c.focusDistance.min; foco.max=c.focusDistance.max;
+      foco.step=c.focusDistance.step || ((c.focusDistance.max-c.focusDistance.min)/100);
+      var aj2={}; try{ aj2=pista.getSettings(); }catch(e){}
+      foco.value = (aj2.focusDistance!=null) ? aj2.focusDistance : c.focusDistance.min;
+      focoAuto.setAttribute('aria-pressed','true');
+      focoCaja.hidden=false;
+    } else focoCaja.hidden=true;
+    panelCamara.hidden = zoomCaja.hidden && focoCaja.hidden;
+  }
+
+  /* ---- enfoque manual y automático ---- */
+  var focoManual=false, ultimoExito=0, ultimoEmpujon=0;
+  foco.addEventListener('input', function(){
+    if(!pista) return;
+    focoManual=true;
+    focoAuto.setAttribute('aria-pressed','false');
+    try{ pista.applyConstraints({advanced:[{focusMode:'manual', focusDistance:Number(foco.value)}]}).catch(function(){}); }catch(e){}
+  });
+  function volverAutoenfoque(){
+    focoManual=false;
+    focoAuto.setAttribute('aria-pressed','true');
+    var c=capacidades();
+    if(pista && c && c.focusMode && c.focusMode.indexOf('continuous')>=0){
+      try{ pista.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(function(){}); }catch(e){}
+    }
+  }
+  focoAuto.addEventListener('click', function(e){ e.stopPropagation(); volverAutoenfoque(); });
+
+  /* si pasan unos segundos sin leer nada, se fuerza un nuevo ciclo de enfoque */
+  function empujarEnfoque(){
+    if(focoManual || !pista) return;
+    var ahora=Date.now();
+    if(ahora-ultimoExito<4000 || ahora-ultimoEmpujon<4000) return;
+    ultimoEmpujon=ahora;
+    var c=capacidades();
+    if(!c || !c.focusMode || c.focusMode.indexOf('single-shot')<0) return;
+    try{
+      pista.applyConstraints({advanced:[{focusMode:'single-shot'}]}).then(function(){
+        setTimeout(function(){
+          if(pista && !focoManual && c.focusMode.indexOf('continuous')>=0){
+            pista.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(function(){});
+          }
+        }, 1200);
+      }).catch(function(){});
+    }catch(e){}
+  }
+
+  zoom.addEventListener('input', function(){
+    zoomTexto.textContent=Number(zoom.value).toFixed(1)+'\u00D7';
+    if(!pista) return;
+    try{ pista.applyConstraints({advanced:[{zoom:Number(zoom.value)}]}); }catch(e){}
+  });
+
+  /* tocar la imagen vuelve a enfocar */
+  camara.addEventListener('click', async function(e){
+    if(!activo || !pista) return;
+    if(e.target.closest('.herramientas, .ultima, .controles-camara')) return;
+    focoManual=false; focoAuto.setAttribute('aria-pressed','true');
+    var c=capacidades(); if(!c) return;
+    var caja=camara.getBoundingClientRect();
+    var av={};
+    if(c.pointsOfInterest) av.pointsOfInterest=[{x:(e.clientX-caja.left)/caja.width, y:(e.clientY-caja.top)/caja.height}];
+    if(c.focusMode && c.focusMode.indexOf('single-shot')>=0) av.focusMode='single-shot';
+    else if(c.focusMode && c.focusMode.indexOf('continuous')>=0) av.focusMode='continuous';
+    if(!Object.keys(av).length) return;
+    try{ await pista.applyConstraints({advanced:[av]}); avisar('Enfocando\u2026'); }catch(e2){}
+  });
+
+  /* ---- recorte del recuadro ---- */
+  function ventanaProp(){
+    return modo==='2d' ? {x:0.17,y:0.26,w:0.66,h:0.48} : {x:0.07,y:0.32,w:0.86,h:0.36};
+  }
+  function recorte(){
+    var vw=video.videoWidth, vh=video.videoHeight;
+    if(!vw||!vh) return null;
+    var cw=camara.clientWidth||vw, ch=camara.clientHeight||vh;
+    var esc=Math.max(cw/vw, ch/vh);
+    var visW=Math.min(vw, cw/esc), visH=Math.min(vh, ch/esc);
+    var ox=(vw-visW)/2, oy=(vh-visH)/2;
+    var v=ventanaProp(), m=0.05;
+    var x=ox+visW*Math.max(0, v.x-m), y=oy+visH*Math.max(0, v.y-m);
+    var w=visW*Math.min(1, v.w+2*m), h=visH*Math.min(1, v.h+2*m);
+    if(x+w>vw) w=vw-x;
+    if(y+h>vh) h=vh-y;
+    if(w<8||h<8) return null;
+    return {x:x,y:y,w:w,h:h};
+  }
+  function cuadroCompleto(){
+    var vw=video.videoWidth, vh=video.videoHeight;
+    if(!vw||!vh) return null;
+    var cw=camara.clientWidth||vw, ch=camara.clientHeight||vh;
+    var esc=Math.max(cw/vw, ch/vh);
+    var visW=Math.min(vw, cw/esc), visH=Math.min(vh, ch/esc);
+    return {x:(vw-visW)/2, y:(vh-visH)/2, w:visW, h:visH};
+  }
+  var soportaFiltro=null, negativoPrimero=false;
+  function puedeInvertirLienzo(){
+    if(soportaFiltro===null){
+      try{
+        pincel.filter='invert(1)';
+        soportaFiltro = (pincel.filter==='invert(1)');
+        pincel.filter='none';
+      }catch(e){ soportaFiltro=false; }
+    }
+    return soportaFiltro;
+  }
+  function dibujar(r, invertir){
+    var f=Math.min(1, 1440/r.w);
+    lienzo.width=Math.max(2, Math.round(r.w*f));
+    lienzo.height=Math.max(2, Math.round(r.h*f));
+    if(invertir && puedeInvertirLienzo()) pincel.filter='invert(1)';
+    pincel.drawImage(video, r.x, r.y, r.w, r.h, 0, 0, lienzo.width, lienzo.height);
+    pincel.filter='none';
+  }
+
+  function conZXing(invertirAqui){
+    var zx=obtenerZXing();
+    if(!zx) return false;
+    var base;
+    try{ base=new Z.HTMLCanvasElementLuminanceSource(lienzo); }catch(e){ return false; }
+    if(invertirAqui){
+      try{ base=base.invert(); }catch(e){ return false; }
+    }
+    var fuentes=[base];
+    try{ if(pasada%2===1 && base.isRotateSupported()) fuentes.push(base.rotateCounterClockwise()); }catch(e){}
+    for(var i=0;i<fuentes.length;i++){
+      try{
+        zx.reset();
+        var r=zx.decodeWithState(new Z.BinaryBitmap(new Z.HybridBinarizer(fuentes[i])));
+        if(r){ registrar(r.getText(), nombreFormato(r.getBarcodeFormat())); return true; }
+      }catch(e){}
+    }
+    try{
+      zx.reset();
+      var r2=zx.decodeWithState(new Z.BinaryBitmap(new Z.GlobalHistogramBinarizer(base)));
+      if(r2){ registrar(r2.getText(), nombreFormato(r2.getBarcodeFormat())); return true; }
+    }catch(e){}
+    return false;
+  }
+
+  async function intentoEn(r, negativo){
+    dibujar(r, negativo);
+    if(detector){
+      try{
+        var res=await detector.detect(lienzo);
+        if(res && res.length){
+          ultimoExito=Date.now();
+          negativoPrimero=negativo;
+          registrar(res[0].rawValue, nombreNativo(res[0].format));
+          return true;
+        }
+      }catch(e){}
+      if(pasada%3!==0) return false;
+    }
+    if(conZXing(negativo && !puedeInvertirLienzo())){ ultimoExito=Date.now(); negativoPrimero=negativo; return true; }
+    return false;
+  }
+
+  async function unIntento(){
+    var r=(pasada%8===7) ? cuadroCompleto() : recorte();
+    if(!r) return;
+    pasada++;
+    var orden = chkNegativo.checked ? (negativoPrimero ? [true,false] : [false,true]) : [false];
+    for(var k=0;k<orden.length;k++){
+      if(!activo) return;
+      if(await intentoEn(r, orden[k])) return;
+    }
+  }
+
+  async function ciclo(){
+    if(!activo) return;
+    if(!pausa){ try{ await unIntento(); }catch(e){} empujarEnfoque(); }
+    if(activo) reloj=setTimeout(function(){ requestAnimationFrame(ciclo); }, detector?70:110);
+  }
+
+  fab.addEventListener('click', function(){ activo?apagar():encender(); });
+  btnLuz.addEventListener('click', async function(){
+    if(!pista) return;
+    luz=!luz;
+    try{ await pista.applyConstraints({advanced:[{torch:luz}]}); btnLuz.setAttribute('aria-pressed',String(luz)); }
+    catch(e){ avisar('Esta c\u00E1mara no permite encender la linterna.', true); }
+  });
+  btnCambiar.addEventListener('click', function(){
+    if(camaras.length<2) return;
+    iCamara=(iCamara+1)%camaras.length;
+    guardarLente(camaras[iCamara].deviceId);
+    avisar('Lente '+(iCamara+1)+' de '+camaras.length+'. Se recordará esta elección.');
+    apagar(true); encender();
+  });
+
+  /* ===== registrar ===== */
+  function registrar(valor, formato){
+    valor=String(valor).trim();
+    if(!valor) return;
+    var t=Date.now();
+    if(valor===ultimoLeido.v && (t-ultimoLeido.t)<1800) return;
+    ultimoLeido={v:valor,t:t};
+
+    var d=new Date(), hora=d.toLocaleTimeString('es-MX'), fecha=d.toLocaleDateString('es-MX'), fila=null;
+    if(chkUnicos.checked){
+      for(var i=0;i<lecturas.length;i++){ if(lecturas[i].valor===valor){ fila=lecturas[i]; break; } }
+    }
+    if(fila){ fila.veces++; fila.hora=hora; fila.fecha=fecha; }
+    else lecturas.unshift({valor:valor, formato:formato||'Capturado', fecha:fecha, hora:hora, veces:1});
+
+    ultimaValor.textContent=valor;
+    ultimaSub.textContent=(formato||'Capturado')+' · toca para copiar';
+    ultima.classList.add('visible');
+
+    festejar();
+    pintar();
+    guardar();
+    if(!chkContinuo.checked && activo) apagar(true);
+    if(personas.length){
+      if(chkAsignar.checked) pedirPersona(valor);
+      else {
+        var dn=duenoDe(valor, null);
+        if(dn) avisar('Ese código ya está asignado a '+dn.pe.nombre, true);
+      }
+    }
+  }
+
+  function festejar(){
+    if(chkSonido.checked) pitar();
+    if(chkVibrar.checked && navigator.vibrate){ try{ navigator.vibrate(45); }catch(e){} }
+    destello.classList.remove('on'); void destello.offsetWidth; destello.classList.add('on');
+  }
+
+  var audio=null;
+  function pitar(){
+    try{
+      audio=audio||new (window.AudioContext||window.webkitAudioContext)();
+      if(audio.state==='suspended') audio.resume();
+      var o=audio.createOscillator(), g=audio.createGain();
+      o.type='square'; o.frequency.value=1180;
+      g.gain.setValueAtTime(0.0001,audio.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.12,audio.currentTime+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,audio.currentTime+0.11);
+      o.connect(g); g.connect(audio.destination);
+      o.start(); o.stop(audio.currentTime+0.12);
+    }catch(e){}
+  }
+
+  ultima.addEventListener('click', function(){
+    copiar(ultimaValor.textContent);
+    avisar('Código copiado');
+  });
+
+  /* ===== lista ===== */
+  function pintar(){
+    lista.innerHTML='';
+    sinNada.style.display=lecturas.length?'none':'block';
+    $('encabezadoLista').style.display=lecturas.length?'block':'none';
+    globo.textContent=lecturas.length;
+    globo.classList.toggle('visible', lecturas.length>0);
+    var enLista=document.querySelector('.nav-item[data-vista="lista"]').getAttribute('aria-selected')==='true';
+    ['btnCopiarTodo','btnCsv','btnVaciar'].forEach(function(id){ $(id).hidden=!(enLista && lecturas.length); });
+    $('btnGaleria').hidden=document.querySelector('.nav-item[data-vista="escanear"]').getAttribute('aria-selected')!=='true';
+
+    lecturas.forEach(function(r,i){
+      var fila=document.createElement('div'); fila.className='item';
+      var av=document.createElement('span'); av.className='av'; av.textContent=lecturas.length-i;
+      var txt=document.createElement('span'); txt.className='txt';
+      var v=document.createElement('span'); v.className='valor'; v.textContent=r.valor;
+      if(r.veces>1){ var b=document.createElement('span'); b.className='insignia'; b.textContent='×'+r.veces; v.appendChild(b); }
+      var s=document.createElement('span'); s.className='sub'; s.textContent=r.formato+' · '+r.hora;
+      txt.appendChild(v); txt.appendChild(s);
+      var quitar=document.createElement('button');
+      quitar.className='icono-btn en-superficie'; quitar.setAttribute('aria-label','Quitar');
+      quitar.innerHTML='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
+      quitar.addEventListener('click', function(e){ e.stopPropagation(); lecturas.splice(i,1); pintar(); guardar(); });
+      fila.appendChild(av); fila.appendChild(txt); fila.appendChild(quitar);
+      fila.addEventListener('click', function(){ copiar(r.valor); avisar('Código copiado'); });
+      lista.appendChild(fila);
+    });
+  }
+
+  function copiar(texto){
+    if(navigator.clipboard && window.isSecureContext){
+      navigator.clipboard.writeText(texto).catch(function(){ copiaVieja(texto); });
+    } else copiaVieja(texto);
+  }
+  function copiaVieja(texto){
+    var ta=document.createElement('textarea');
+    ta.value=texto; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); }catch(e){}
+    document.body.removeChild(ta);
+  }
+
+  $('btnCopiarTodo').addEventListener('click', function(){
+    if(!lecturas.length) return;
+    copiar(lecturas.slice().reverse().map(function(r){ return r.valor; }).join('\n'));
+    avisar(lecturas.length+' códigos copiados');
+  });
+
+  $('btnCsv').addEventListener('click', function(){
+    if(!lecturas.length) return;
+    var esc=function(s){ return '"'+String(s).replace(/"/g,'""')+'"'; };
+    var f=[['No.','Codigo','Formato','Fecha','Hora','Veces'].join(',')];
+    lecturas.slice().reverse().forEach(function(r,i){
+      f.push([i+1,esc(r.valor),esc(r.formato),esc(r.fecha),esc(r.hora),r.veces].join(','));
+    });
+    var blob=new Blob(['\ufeff'+f.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='codigos_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(a.href); },1500);
+    avisar('CSV descargado');
+  });
+
+  $('btnVaciar').addEventListener('click', function(){
+    if(!lecturas.length) return;
+    if(!confirm('¿Vaciar las '+lecturas.length+' lecturas?')) return;
+    lecturas=[]; ultimoLeido={v:'',t:0};
+    ultima.classList.remove('visible');
+    pintar(); guardar();
+    avisar('Lista vacía');
+  });
+
+  /* ===== chips de formato ===== */
+  document.querySelectorAll('.chip').forEach(function(c){
+    c.addEventListener('click', function(){
+      modo=c.dataset.modo;
+      camara.classList.toggle('matricial', modo==='2d');
+      if(zxing) zxing.setHints(pistasZX());
+      document.querySelectorAll('.chip').forEach(function(o){ o.setAttribute('aria-pressed', String(o===c)); });
+      guardar();
+      if(activo){ apagar(true); encender(); }
+    });
+  });
+
+  /* ===== imagen y captura manual ===== */
+  $('btnArchivo').addEventListener('click', function(){ archivo.click(); });
+  $('btnGaleria').addEventListener('click', function(){ archivo.click(); });
+  archivo.addEventListener('change', function(){ leerArchivos(this.files); this.value=''; });
+  ['dragenter','dragover'].forEach(function(ev){ zona.addEventListener(ev, function(e){ e.preventDefault(); zona.classList.add('encima'); }); });
+  ['dragleave','drop'].forEach(function(ev){ zona.addEventListener(ev, function(e){ e.preventDefault(); zona.classList.remove('encima'); }); });
+  zona.addEventListener('drop', function(e){ if(e.dataTransfer&&e.dataTransfer.files) leerArchivos(e.dataTransfer.files); });
+  document.addEventListener('paste', function(e){
+    if(!e.clipboardData) return;
+    var it=e.clipboardData.items, imgs=[];
+    for(var i=0;i<it.length;i++){ if(it[i].type&&it[i].type.indexOf('image')===0) imgs.push(it[i].getAsFile()); }
+    if(imgs.length) leerArchivos(imgs);
+  });
+
+  function cargarImagen(archivo){
+    return new Promise(function(listo, falla){
+      if(window.createImageBitmap){
+        createImageBitmap(archivo).then(listo).catch(function(){ porEtiqueta(); });
+      } else porEtiqueta();
+      function porEtiqueta(){
+        var img=new Image(), url=URL.createObjectURL(archivo);
+        img.onload=function(){ listo(img); setTimeout(function(){ URL.revokeObjectURL(url); },1000); };
+        img.onerror=function(){ URL.revokeObjectURL(url); falla(new Error('no se pudo abrir la imagen')); };
+        img.src=url;
+      }
+    });
+  }
+
+  function pintarFoto(img, zona, anchoMax){
+    var iw=img.width||img.naturalWidth, ih=img.height||img.naturalHeight;
+    var x=zona?iw*zona[0]:0, y=zona?ih*zona[1]:0;
+    var w=zona?iw*zona[2]:iw, h=zona?ih*zona[3]:ih;
+    var f=Math.min(1, anchoMax/Math.max(w,h));
+    lienzoFoto.width=Math.max(2, Math.round(w*f));
+    lienzoFoto.height=Math.max(2, Math.round(h*f));
+    pincelFoto.drawImage(img, x, y, w, h, 0, 0, lienzoFoto.width, lienzoFoto.height);
+  }
+
+  async function decodificarFoto(){
+    var det=await obtenerDetector();
+    if(det){
+      try{
+        var r=await det.detect(lienzoFoto);
+        if(r && r.length) return {valor:r[0].rawValue, formato:nombreNativo(r[0].format)};
+      }catch(e){}
+      if(puedeInvertirLienzo()){
+        try{
+          pincelFoto.filter='invert(1)';
+          pincelFoto.drawImage(lienzoFoto, 0, 0);
+          pincelFoto.filter='none';
+          var r2=await det.detect(lienzoFoto);
+          if(r2 && r2.length) return {valor:r2[0].rawValue, formato:nombreNativo(r2[0].format)};
+        }catch(e){ pincelFoto.filter='none'; }
+      }
+    }
+    var zx=obtenerZXing(), base;
+    try{ base=new Z.HTMLCanvasElementLuminanceSource(lienzoFoto); }catch(e){ return null; }
+    var variantes=[base];
+    try{
+      if(base.isRotateSupported()){
+        var giro=base.rotateCounterClockwise();
+        variantes.push(giro);
+        variantes.push(giro.rotateCounterClockwise());
+      }
+    }catch(e){}
+    try{ variantes.push(base.invert()); }catch(e){}
+    for(var i=0;i<variantes.length;i++){
+      for(var b=0;b<2;b++){
+        try{
+          zx.reset();
+          var bin = b ? new Z.GlobalHistogramBinarizer(variantes[i]) : new Z.HybridBinarizer(variantes[i]);
+          var res=zx.decodeWithState(new Z.BinaryBitmap(bin));
+          if(res) return {valor:res.getText(), formato:nombreFormato(res.getBarcodeFormat())};
+        }catch(e){}
+      }
+    }
+    return null;
+  }
+
+  async function leerUnaImagen(archivo){
+    var img=await cargarImagen(archivo);
+    var anchos=[1600, 2400, 1000];
+    for(var i=0;i<anchos.length;i++){
+      pintarFoto(img, null, anchos[i]);
+      var r=await decodificarFoto();
+      if(r) return r;
+    }
+    // el código puede ser pequeño dentro de una foto grande: por partes
+    var zonas=[[0.15,0.15,0.7,0.7],[0,0,0.58,0.58],[0.42,0,0.58,0.58],[0,0.42,0.58,0.58],[0.42,0.42,0.58,0.58],
+               [0,0.3,1,0.4],[0.3,0,0.4,1]];
+    for(var z=0;z<zonas.length;z++){
+      pintarFoto(img, zonas[z], 1600);
+      var r2=await decodificarFoto();
+      if(r2) return r2;
+    }
+    try{ if(img.close) img.close(); }catch(e){}
+    return null;
+  }
+
+  async function leerArchivos(archivos){
+    if(!archivos||!archivos.length) return;
+    avisar(archivos.length===1?'Leyendo la imagen…':'Leyendo '+archivos.length+' imágenes…');
+    var n=0;
+    for(var i=0;i<archivos.length;i++){
+      try{
+        var r=await leerUnaImagen(archivos[i]);
+        if(r){ ultimoLeido={v:'',t:0}; registrar(r.valor, r.formato); n++; }
+      }catch(e){}
+    }
+    if(n){ avisar(n===1?'1 código leído de la imagen':n+' códigos leídos'); ir('lista'); }
+    else avisar('No se encontró ningún código. Recorta la foto para que el código se vea grande y derecho.', true);
+  }
+
+  function agregarManual(){
+    var v=manual.value.trim();
+    if(!v) return;
+    ultimoLeido={v:'',t:0};
+    registrar(v,'Capturado');
+    manual.value='';
+    avisar('Agregado a la lista');
+  }
+  $('btnManual').addEventListener('click', agregarManual);
+  manual.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); agregarManual(); } });
+
+  /* ===== guardar ===== */
+  function guardar(){
+    try{
+      localStorage.setItem(CLAVE, JSON.stringify({
+        lecturas:lecturas.slice(0,800),
+        op:{modo:modo, sonido:chkSonido.checked, vibrar:chkVibrar.checked, continuo:chkContinuo.checked, unicos:chkUnicos.checked, negativo:chkNegativo.checked}
+      }));
+    }catch(e){}
+  }
+  function recuperar(){
+    try{
+      var d=JSON.parse(localStorage.getItem(CLAVE)||'null');
+      if(!d) return;
+      if(Array.isArray(d.lecturas)) lecturas=d.lecturas;
+      if(d.op){
+        modo=d.op.modo||'1d';
+        document.querySelectorAll('.chip').forEach(function(c){ c.setAttribute('aria-pressed', String(c.dataset.modo===modo)); });
+        camara.classList.toggle('matricial', modo==='2d');
+        chkSonido.checked=d.op.sonido!==false;
+        chkVibrar.checked=d.op.vibrar!==false;
+        chkContinuo.checked=d.op.continuo!==false;
+        chkUnicos.checked=d.op.unicos!==false;
+        chkNegativo.checked=d.op.negativo!==false;
+      }
+    }catch(e){}
+  }
+  [chkSonido,chkVibrar,chkContinuo,chkUnicos,chkNegativo].forEach(function(c){ c.addEventListener('change', guardar); });
+
+  /* ===== personas desde Excel ===== */
+  var chkAsignar=$('chkAsignar'), archivoExcel=$('archivoExcel');
+  var velo=$('velo'), velo2=$('velo2'), hojaModal=$('hojaModal'), dialogo=$('dialogo');
+  var libro=null, hojaExcel=null, hojaNombre='', archivoNombre='';
+  var filas=[], filaBase=0, filaEnc=0, colNombre=0, colExtra=-1, colCodigo=-1, colFecha=-1;
+  var titulosMayus=false;
+  var personas=[], filtro='todos', pausa=false;
+  var CLAVE_P='lector-codigos-personas-v2';
+
+  function normaliza(t){
+    return String(t==null?'':t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+  }
+  function texto(v){ return String(v==null?'':v).trim(); }
+
+  /* ---- hoja inferior ---- */
+  function abrirHoja(titulo, aclara, cuerpo, acciones){
+    $('hojaTitulo').textContent=titulo||'';
+    var a=$('hojaAclara');
+    a.textContent=aclara||''; a.style.display=aclara?'block':'none';
+    var c=$('hojaCuerpo'); c.innerHTML=''; if(cuerpo) c.appendChild(cuerpo);
+    var ac=$('hojaAcciones'); ac.innerHTML='';
+    (acciones||[]).forEach(function(b){
+      var e=document.createElement('button');
+      e.className='btn'+(b.principal?'':' texto');
+      e.textContent=b.texto;
+      e.addEventListener('click', b.accion);
+      ac.appendChild(e);
+    });
+    velo.classList.add('visible'); hojaModal.classList.add('visible');
+  }
+  function cerrarHoja(){
+    hojaModal.classList.remove('visible'); velo.classList.remove('visible');
+    $('hojaCuerpo').innerHTML='';
+    pausa=false;
+  }
+  velo.addEventListener('click', cerrarHoja);
+
+  /* ---- diálogos ---- */
+  function cerrarDialogo(){
+    dialogo.classList.remove('visible'); velo2.classList.remove('visible');
+    $('dlgExtra').innerHTML='';
+  }
+  velo2.addEventListener('click', cerrarDialogo);
+  function preguntarVarias(titulo, mensaje, opciones){
+    $('dlgTitulo').textContent=titulo;
+    $('dlgTexto').textContent=mensaje;
+    $('dlgExtra').innerHTML='';
+    var ac=$('dlgAcciones'); ac.innerHTML='';
+    ac.classList.toggle('columna', opciones.length>1);
+    opciones.forEach(function(o){
+      var b=document.createElement('button');
+      b.className='btn'+(o.suave?' contorno':'');
+      b.textContent=o.texto;
+      b.addEventListener('click', function(){ cerrarDialogo(); o.accion(); });
+      ac.appendChild(b);
+    });
+    var no=document.createElement('button');
+    no.className='btn texto'; no.textContent='Cancelar';
+    no.addEventListener('click', cerrarDialogo);
+    ac.appendChild(no);
+    velo2.classList.add('visible'); dialogo.classList.add('visible');
+  }
+  function preguntar(titulo, mensaje, textoSi, alAceptar){
+    preguntarVarias(titulo, mensaje, [{texto:textoSi, accion:alAceptar}]);
+  }
+
+  /* ---- cargar el archivo ---- */
+  function pedirArchivo(){ archivoExcel.click(); }
+  $('btnCargar').addEventListener('click', pedirArchivo);
+  $('btnCargarVacio').addEventListener('click', pedirArchivo);
+  $('btnCargarAjustes').addEventListener('click', pedirArchivo);
+  archivoExcel.addEventListener('change', function(){
+    if(this.files && this.files[0]) cargarExcel(this.files[0]);
+    this.value='';
+  });
+
+  function hayExcelJS(){
+    return typeof XLSX!=='undefined' && XLSX && typeof XLSX.read==='function';
+  }
+
+  async function cargarExcel(f){
+    if(!hayExcelJS()){
+      avisar('Falta el archivo xlsx.min.js en el sitio. Súbelo junto a index.html.', true);
+      return;
+    }
+    if(!f || !f.size){
+      avisar('El archivo llegó vacío. Bájalo a tu dispositivo antes de elegirlo (no lo abras desde Drive).', true);
+      return;
+    }
+    var datos;
+    try{
+      avisar('Abriendo el archivo…');
+      datos=new Uint8Array(await f.arrayBuffer());
+    }catch(e){
+      avisar('No se pudo leer el archivo desde esa carpeta: '+(e&&e.message?e.message:e), true);
+      return;
+    }
+    if(datos.length<4){ avisar('El archivo está vacío o incompleto.', true); return; }
+    try{
+      libro=XLSX.read(datos,{type:'array'});
+    }catch(e){
+      avisar('Excel no pudo interpretarlo: '+(e&&e.message?e.message:e), true);
+      return;
+    }
+    archivoNombre=f.name||'listado.xlsx';
+    if(!libro.SheetNames || !libro.SheetNames.length){ avisar('El archivo no tiene hojas.', true); return; }
+    try{
+      configurar(libro.SheetNames[0]);
+    }catch(e){
+      avisar('Fallo al preparar las columnas: '+(e&&e.message?e.message:e), true);
+    }
+  }
+
+  function encabezadosDe(nombre, filaEncabezado){
+    var hoja=libro.Sheets[nombre];
+    var aoa=XLSX.utils.sheet_to_json(hoja,{header:1, defval:'', raw:false, blankrows:true});
+    var fila=aoa[filaEncabezado]||[];
+    var ancho=0;
+    aoa.forEach(function(r){ if(r.length>ancho) ancho=r.length; });
+    var res=[];
+    for(var i=0;i<ancho;i++){
+      var t=texto(fila[i]);
+      res.push(t || ('Columna '+XLSX.utils.encode_col(i)));
+    }
+    return {aoa:aoa, titulos:res};
+  }
+
+  function configurar(nombreHoja){
+    var caja=document.createElement('div');
+
+    function selector(id, etiqueta){
+      var d=document.createElement('div'); d.className='campo-cfg';
+      var l=document.createElement('label'); l.textContent=etiqueta; l.setAttribute('for',id);
+      var sel=document.createElement('select'); sel.id=id;
+      d.appendChild(l); d.appendChild(sel); caja.appendChild(d);
+      return sel;
+    }
+    var selHoja=selector('cfgHoja','Hoja del archivo');
+    libro.SheetNames.forEach(function(n){
+      var o=document.createElement('option'); o.value=n; o.textContent=n; selHoja.appendChild(o);
+    });
+    selHoja.value=nombreHoja;
+
+    var dEnc=document.createElement('div'); dEnc.className='campo-cfg';
+    var lEnc=document.createElement('label'); lEnc.textContent='Fila de los títulos'; lEnc.setAttribute('for','cfgEnc');
+    var inEnc=document.createElement('input'); inEnc.type='number'; inEnc.id='cfgEnc'; inEnc.min='1'; inEnc.value='1';
+    dEnc.appendChild(lEnc); dEnc.appendChild(inEnc); caja.appendChild(dEnc);
+
+    var selNombre=selector('cfgNombre','Columna con el nombre');
+    var selExtra=selector('cfgExtra','Otro dato para identificar (opcional)');
+    var selCodigo=selector('cfgCodigo','Columna donde se escribe el código');
+    var selFecha=selector('cfgFecha','Columna de la fecha y hora de lectura');
+
+    function refrescar(){
+      var fEnc=Math.max(0, (parseInt(inEnc.value,10)||1)-1);
+      var d=encabezadosDe(selHoja.value, fEnc);
+      [selNombre, selExtra, selCodigo, selFecha].forEach(function(sl){ sl.innerHTML=''; });
+      var o0=document.createElement('option'); o0.value='-1'; o0.textContent='Ninguno'; selExtra.appendChild(o0);
+      [selCodigo, selFecha].forEach(function(sl){
+        var o=document.createElement('option'); o.value='-1'; o.textContent='Columna nueva al final';
+        sl.appendChild(o);
+      });
+      d.titulos.forEach(function(t,i){
+        [selNombre, selExtra, selCodigo, selFecha].forEach(function(sl){
+          var o=document.createElement('option'); o.value=String(i);
+          o.textContent=XLSX.utils.encode_col(i)+' · '+t;
+          sl.appendChild(o);
+        });
+      });
+      selNombre.value='0';
+      d.titulos.forEach(function(t,i){
+        var n=normaliza(t);
+        if(n.indexOf('nombre')>=0 || n.indexOf('trabajador')>=0 || n.indexOf('persona')>=0) selNombre.value=String(i);
+        if(n.indexOf('codigo')>=0 || n.indexOf('barras')>=0) selCodigo.value=String(i);
+        if(n.indexOf('matricula')>=0 || n.indexOf('numero')>=0 || n.indexOf('rfc')>=0) selExtra.value=String(i);
+        if(n.indexOf('fecha')>=0 || n.indexOf('hora')>=0) selFecha.value=String(i);
+      });
+    }
+    selHoja.addEventListener('change', refrescar);
+    inEnc.addEventListener('change', refrescar);
+    refrescar();
+
+    abrirHoja('Cómo está tu tabla', archivoNombre, caja, [
+      {texto:'Cancelar', accion:cerrarHoja},
+      {texto:'Cargar lista', principal:true, accion:function(){
+        aplicar(selHoja.value, Math.max(0,(parseInt(inEnc.value,10)||1)-1),
+                parseInt(selNombre.value,10), parseInt(selExtra.value,10),
+                parseInt(selCodigo.value,10), parseInt(selFecha.value,10));
+      }}
+    ]);
+  }
+
+  function aplicar(nombreHoja, fEnc, cNom, cExtra, cCod, cFec){
+    hojaNombre=nombreHoja;
+    hojaExcel=libro.Sheets[nombreHoja];
+    var ref=XLSX.utils.decode_range(hojaExcel['!ref']||'A1');
+    filaBase=ref.s.r;
+    var d=encabezadosDe(nombreHoja, fEnc);
+    filas=d.aoa;
+    filaEnc=fEnc; colNombre=cNom; colExtra=cExtra;
+
+    var junto=d.titulos.join('');
+    titulosMayus = junto===junto.toUpperCase() && junto!==junto.toLowerCase();
+    function titulo(t){ return titulosMayus ? t.toUpperCase() : t; }
+
+    var ancho=0;
+    filas.forEach(function(r){ if(r.length>ancho) ancho=r.length; });
+    var siguiente=ancho;
+    colCodigo = cCod<0 ? siguiente++ : cCod;
+    colFecha  = cFec<0 ? siguiente++ : cFec;
+    if(cCod<0){ escribirCelda(filaEnc, colCodigo, titulo('Código')); anchoColumna(colCodigo, 20); }
+    if(cFec<0){ escribirCelda(filaEnc, colFecha,  titulo('Fecha y hora')); anchoColumna(colFecha, 20); }
+
+    /* una fila por código: las filas repetidas de la misma persona se agrupan */
+    personas=[];
+    var porClave={};
+    for(var i=fEnc+1;i<filas.length;i++){
+      var nom=texto((filas[i]||[])[cNom]);
+      if(!nom) continue;
+      var ext = cExtra>=0 ? texto((filas[i]||[])[cExtra]) : '';
+      var clave=normaliza(nom)+'|'+normaliza(ext);
+      var asig={fila:i, codigo:texto((filas[i]||[])[colCodigo]), fecha:texto((filas[i]||[])[colFecha])};
+      if(porClave[clave]) porClave[clave].asigs.push(asig);
+      else {
+        porClave[clave]={nombre:nom, extra:ext, asigs:[asig]};
+        personas.push(porClave[clave]);
+      }
+    }
+    if(!personas.length){
+      avisar('No se encontraron nombres en esa columna. Revisa la fila de títulos.', true);
+      return;
+    }
+    cerrarHoja();
+    guardarPersonas();
+    pintarPersonas();
+    ir('personas');
+    avisar(personas.length+' personas cargadas');
+  }
+
+  /* ---- escribir en la hoja ---- */
+  function ampliarRango(r, c){
+    var ref=XLSX.utils.decode_range(hojaExcel['!ref']||'A1');
+    if(filaBase+r>ref.e.r) ref.e.r=filaBase+r;
+    if(c>ref.e.c) ref.e.c=c;
+    hojaExcel['!ref']=XLSX.utils.encode_range(ref);
+  }
+  function escribirCelda(r, c, valor){
+    if(c==null || c<0) return;
+    if(!filas[r]) filas[r]=[];
+    filas[r][c]=valor;
+    if(!hojaExcel) return;
+    var dir=XLSX.utils.encode_cell({r:filaBase+r, c:c});
+    if(valor==='') delete hojaExcel[dir];
+    else hojaExcel[dir]={t:'s', v:valor};
+    ampliarRango(r, c);
+  }
+  function escribirNumero(r, c, valor, formato, comoTexto){
+    if(c==null || c<0) return;
+    if(!filas[r]) filas[r]=[];
+    filas[r][c]=comoTexto;
+    if(!hojaExcel) return;
+    var dir=XLSX.utils.encode_cell({r:filaBase+r, c:c});
+    hojaExcel[dir]={t:'n', v:valor, z:formato};
+    ampliarRango(r, c);
+  }
+  function anchoColumna(c, ancho){
+    if(!hojaExcel || c<0) return;
+    if(!hojaExcel['!cols']) hojaExcel['!cols']=[];
+    while(hojaExcel['!cols'].length<=c) hojaExcel['!cols'].push(undefined);
+    if(!hojaExcel['!cols'][c]) hojaExcel['!cols'][c]={wch:ancho};
+  }
+  function dc(n){ return (n<10?'0':'')+n; }
+  function sellarFechaHora(a){
+    var d=new Date();
+    var serie=(d.getTime()-d.getTimezoneOffset()*60000)/86400000+25569;
+    a.fecha=dc(d.getDate())+'/'+dc(d.getMonth()+1)+'/'+d.getFullYear()+' '+
+            dc(d.getHours())+':'+dc(d.getMinutes())+':'+dc(d.getSeconds());
+    escribirNumero(a.fila, colFecha, serie, 'dd/mm/yyyy hh:mm:ss', a.fecha);
+  }
+
+  /* ---- insertar y borrar filas completas ---- */
+  function anchoHoja(){
+    var a=0;
+    filas.forEach(function(r){ if(r && r.length>a) a=r.length; });
+    if(hojaExcel){
+      var ref=XLSX.utils.decode_range(hojaExcel['!ref']||'A1');
+      if(ref.e.c+1>a) a=ref.e.c+1;
+    }
+    return a;
+  }
+  function insertarFila(k){
+    if(hojaExcel){
+      var ref=XLSX.utils.decode_range(hojaExcel['!ref']||'A1');
+      for(var r=ref.e.r; r>=filaBase+k; r--){
+        for(var c=ref.s.c; c<=ref.e.c; c++){
+          var o=XLSX.utils.encode_cell({r:r, c:c});
+          var dst=XLSX.utils.encode_cell({r:r+1, c:c});
+          if(hojaExcel[o]){ hojaExcel[dst]=hojaExcel[o]; delete hojaExcel[o]; }
+          else delete hojaExcel[dst];
+        }
+      }
+      ref.e.r++;
+      hojaExcel['!ref']=XLSX.utils.encode_range(ref);
+    }
+    filas.splice(k, 0, []);
+    personas.forEach(function(p){
+      p.asigs.forEach(function(a){ if(a.fila>=k) a.fila++; });
+    });
+  }
+  function borrarFila(k){
+    if(hojaExcel){
+      var ref=XLSX.utils.decode_range(hojaExcel['!ref']||'A1');
+      for(var r=filaBase+k; r<ref.e.r; r++){
+        for(var c=ref.s.c; c<=ref.e.c; c++){
+          var o=XLSX.utils.encode_cell({r:r+1, c:c});
+          var dst=XLSX.utils.encode_cell({r:r, c:c});
+          if(hojaExcel[o]) hojaExcel[dst]=hojaExcel[o];
+          else delete hojaExcel[dst];
+        }
+      }
+      for(var c2=ref.s.c; c2<=ref.e.c; c2++) delete hojaExcel[XLSX.utils.encode_cell({r:ref.e.r, c:c2})];
+      if(ref.e.r>filaBase) ref.e.r--;
+      hojaExcel['!ref']=XLSX.utils.encode_range(ref);
+    }
+    filas.splice(k, 1);
+    personas.forEach(function(p){
+      p.asigs.forEach(function(a){ if(a.fila>k) a.fila--; });
+    });
+  }
+  function copiarFila(desde, hacia, excepto){
+    var ancho=anchoHoja();
+    if(!filas[hacia]) filas[hacia]=[];
+    for(var c=0;c<ancho;c++){
+      if(excepto.indexOf(c)>=0){ filas[hacia][c]=''; continue; }
+      filas[hacia][c]=(filas[desde]||[])[c]===undefined ? '' : filas[desde][c];
+      if(hojaExcel){
+        var o=hojaExcel[XLSX.utils.encode_cell({r:filaBase+desde, c:c})];
+        var dir=XLSX.utils.encode_cell({r:filaBase+hacia, c:c});
+        if(o){
+          var copia={t:o.t, v:o.v};
+          if(o.z) copia.z=o.z;
+          if(o.s) copia.s=o.s;
+          hojaExcel[dir]=copia;               // se copia el valor, nunca la fórmula
+        } else delete hojaExcel[dir];
+      }
+    }
+    if(hojaExcel) ampliarRango(hacia, ancho-1);
+  }
+
+  /* ---- un código pertenece a una sola persona ---- */
+  function duenoDe(valor, exceptoPe){
+    for(var i=0;i<personas.length;i++){
+      if(personas[i]===exceptoPe) continue;
+      for(var j=0;j<personas[i].asigs.length;j++){
+        if(personas[i].asigs[j].codigo && personas[i].asigs[j].codigo===valor){
+          return {pe:personas[i], a:personas[i].asigs[j]};
+        }
+      }
+    }
+    return null;
+  }
+  function codigosDe(pe){
+    return pe.asigs.filter(function(a){ return !!a.codigo; });
+  }
+
+  function asignarA(pe, valor, mensaje){
+    var libre=null;
+    for(var i=0;i<pe.asigs.length;i++){ if(!pe.asigs[i].codigo){ libre=pe.asigs[i]; break; } }
+    if(!libre){
+      var ultima=pe.asigs[pe.asigs.length-1];
+      var k=ultima.fila+1;
+      insertarFila(k);
+      copiarFila(ultima.fila, k, [colCodigo, colFecha]);
+      libre={fila:k, codigo:'', fecha:''};
+      pe.asigs.push(libre);
+    }
+    libre.codigo=valor;
+    escribirCelda(libre.fila, colCodigo, valor);
+    sellarFechaHora(libre);
+    guardarPersonas();
+    pintarPersonas();
+    cerrarHoja();
+    avisar(mensaje || ('Asignado a '+pe.nombre));
+  }
+
+  function quitarAsignacion(pe, a){
+    var k=pe.asigs.indexOf(a);
+    if(k<0) return;
+    if(pe.asigs.length>1){
+      pe.asigs.splice(k,1);
+      borrarFila(a.fila);                     // desaparece la fila repetida
+    } else {
+      a.codigo=''; a.fecha='';
+      escribirCelda(a.fila, colCodigo, '');
+      escribirCelda(a.fila, colFecha, '');
+    }
+  }
+
+  function moverA(pe, valor, dueno){
+    var de=dueno.pe.nombre;
+    quitarAsignacion(dueno.pe, dueno.a);
+    asignarA(pe, valor, 'Movido de '+de+' a '+pe.nombre);
+  }
+
+  /* ---- preguntar a quién ---- */
+  function pedirPersona(valor){
+    pausa=true;
+    var caja=document.createElement('div');
+
+    var cod=document.createElement('div');
+    cod.className='codigo-grande'; cod.textContent=valor;
+    caja.appendChild(cod);
+
+    var dueno=duenoDe(valor, null);
+    if(dueno){
+      var al=document.createElement('div');
+      al.className='alerta';
+      al.textContent='Este código ya está asignado a '+dueno.pe.nombre+
+        (dueno.a.fecha ? ' ('+dueno.a.fecha+').' : '.')+
+        ' Un código sólo puede ser de una persona: si eliges a alguien más, se le quita a '+dueno.pe.nombre+'.';
+      caja.appendChild(al);
+    }
+
+    var busc=document.createElement('div'); busc.className='buscador';
+    var inp=document.createElement('input');
+    inp.type='text'; inp.placeholder='Buscar persona'; inp.autocomplete='off';
+    busc.appendChild(inp); caja.appendChild(busc);
+
+    var cont=document.createElement('div'); caja.appendChild(cont);
+
+    function pinta(){
+      var q=normaliza(inp.value);
+      cont.innerHTML='';
+      var vistos=0;
+      for(var i=0;i<personas.length && vistos<80;i++){
+        var pe=personas[i];
+        if(q && normaliza(pe.nombre+' '+pe.extra).indexOf(q)<0) continue;
+        try{
+          cont.appendChild(filaPersona(pe,
+            function(x){ return function(){ intentarAsignar(x, valor); }; }(pe),
+            (dueno && dueno.pe===pe) ? 'ya lo tiene' : ''));
+        }catch(e){ continue; }
+        vistos++;
+      }
+      if(!vistos){
+        var v=document.createElement('p');
+        v.className='vacio'; v.style.padding='18px 20px';
+        v.textContent='Ninguna persona coincide con esa búsqueda.';
+        cont.appendChild(v);
+      }
+    }
+    inp.addEventListener('input', pinta);
+    pinta();
+
+    abrirHoja('¿A quién le asigno este código?',
+      dueno ? 'Ya asignado a '+dueno.pe.nombre : personas.length+' personas en la lista',
+      caja, [{texto:'Sólo guardarlo en Lecturas', accion:cerrarHoja}]);
+  }
+
+  function intentarAsignar(pe, valor){
+    var dueno=duenoDe(valor, null);
+    if(dueno && dueno.pe===pe){
+      avisar(pe.nombre+' ya tiene ese código');
+      cerrarHoja();
+      return;
+    }
+    if(dueno){
+      preguntarVarias('Código ya asignado',
+        'Este código es de '+dueno.pe.nombre+'. Un código no puede estar en dos personas.', [
+        {texto:'Quitárselo a '+dueno.pe.nombre+' y pasarlo a '+pe.nombre,
+         accion:function(){ moverA(pe, valor, dueno); }}
+      ]);
+      return;
+    }
+    var cuantos=codigosDe(pe).length;
+    if(cuantos){
+      preguntar('Agregar otro código',
+        pe.nombre+' ya tiene '+cuantos+(cuantos===1?' código':' códigos')+
+        '. Este se agrega en una fila nueva, debajo.',
+        'Agregar', function(){ asignarA(pe, valor); });
+      return;
+    }
+    asignarA(pe, valor);
+  }
+
+  /* ---- ficha con todos los códigos de la persona ---- */
+  function verPersona(pe){
+    var caja=document.createElement('div');
+
+    var lista=document.createElement('div');
+    caja.appendChild(lista);
+
+    function pintaCodigos(){
+      lista.innerHTML='';
+      var cods=codigosDe(pe);
+      if(!cods.length){
+        var v=document.createElement('p');
+        v.className='vacio'; v.style.padding='14px 20px';
+        v.textContent='Todavía no tiene códigos.';
+        lista.appendChild(v);
+        return;
+      }
+      cods.forEach(function(a){
+        var f=document.createElement('div'); f.className='persona';
+        var txt=document.createElement('span'); txt.className='txt';
+        var c=document.createElement('span'); c.className='cod'; c.textContent=a.codigo;
+        txt.appendChild(c);
+        if(a.fecha){
+          var w=document.createElement('span'); w.className='nada'; w.textContent=a.fecha;
+          txt.appendChild(document.createElement('br')); txt.appendChild(w);
+        }
+        var quitar=document.createElement('button');
+        quitar.className='icono-btn en-superficie'; quitar.setAttribute('aria-label','Quitar código');
+        quitar.innerHTML='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
+        quitar.addEventListener('click', function(){
+          quitarAsignacion(pe, a);
+          guardarPersonas(); pintarPersonas(); pintaCodigos();
+          avisar('Código quitado');
+        });
+        f.appendChild(txt); f.appendChild(quitar);
+        lista.appendChild(f);
+      });
+    }
+    pintaCodigos();
+
+    var campoCaja=document.createElement('div'); campoCaja.className='campo';
+    var campo=document.createElement('input');
+    campo.type='text'; campo.placeholder='Escribir un código a mano'; campo.autocomplete='off';
+    campo.style.flex='1'; campo.style.minWidth='0';
+    var add=document.createElement('button');
+    add.className='btn'; add.textContent='Agregar';
+    add.addEventListener('click', function(){
+      var v=campo.value.trim();
+      if(!v) return;
+      campo.value='';
+      var dueno=duenoDe(v, null);
+      if(dueno && dueno.pe===pe){ avisar('Ya tiene ese código'); return; }
+      if(dueno){
+        preguntarVarias('Código ya asignado',
+          'Este código es de '+dueno.pe.nombre+'. Un código no puede estar en dos personas.', [
+          {texto:'Quitárselo a '+dueno.pe.nombre+' y pasarlo a '+pe.nombre,
+           accion:function(){
+             quitarAsignacion(dueno.pe, dueno.a);
+             asignarA(pe, v, 'Movido de '+dueno.pe.nombre+' a '+pe.nombre);
+             verPersona(pe);
+           }}
+        ]);
+        return;
+      }
+      asignarA(pe, v);
+      verPersona(pe);
+    });
+    campoCaja.appendChild(campo); campoCaja.appendChild(add);
+    caja.appendChild(campoCaja);
+
+    abrirHoja(pe.nombre, pe.extra || null, caja, [{texto:'Listo', accion:cerrarHoja}]);
+  }
+
+  /* ---- vista de personas ---- */
+  function filaPersona(pe, alTocar, marca){
+    var f=document.createElement('div');
+    var cods=codigosDe(pe);
+    f.className='persona'+(cods.length?' con':'');
+    var av=document.createElement('span');
+    av.className='av';
+    av.textContent = cods.length>1 ? String(cods.length) : (pe.nombre.charAt(0)||'?').toUpperCase();
+    var txt=document.createElement('span'); txt.className='txt';
+    var n=document.createElement('span'); n.className='nom'; n.textContent=pe.nombre;
+    txt.appendChild(n);
+    if(pe.extra){
+      var e=document.createElement('span'); e.className='nada'; e.textContent=pe.extra;
+      txt.appendChild(document.createElement('br')); txt.appendChild(e);
+    }
+    if(!cods.length){
+      var sin=document.createElement('span'); sin.className='nada'; sin.textContent='Sin código';
+      txt.appendChild(document.createElement('br')); txt.appendChild(sin);
+    } else {
+      cods.slice(0,3).forEach(function(a){
+        var c=document.createElement('span'); c.className='cod'; c.textContent=a.codigo;
+        txt.appendChild(document.createElement('br')); txt.appendChild(c);
+      });
+      if(cods.length>3){
+        var mas=document.createElement('span');
+        mas.className='nada'; mas.textContent='y '+(cods.length-3)+' más';
+        txt.appendChild(document.createElement('br')); txt.appendChild(mas);
+      }
+    }
+    if(marca){
+      var m=document.createElement('span');
+      m.className='insignia dup'; m.textContent=marca;
+      txt.appendChild(document.createTextNode(' ')); txt.appendChild(m);
+      f.className+=' dup';
+    }
+    f.appendChild(av); f.appendChild(txt);
+    f.addEventListener('click', alTocar);
+    return f;
+  }
+
+  function pintarPersonas(){
+    var hay=personas.length>0;
+    $('sinLista').style.display=hay?'none':'block';
+    $('conLista').hidden=!hay;
+    var enPersonas=document.querySelector('.nav-item[data-vista="personas"]').getAttribute('aria-selected')==='true';
+    $('btnExcel').hidden=!(enPersonas && hay);
+    $('btnCargar').hidden=!enPersonas;
+    if(!hay) return;
+
+    var conCodigo=0, totalCodigos=0;
+    personas.forEach(function(p){
+      var c=codigosDe(p).length;
+      totalCodigos+=c;
+      if(c) conCodigo++;
+    });
+    $('numCodigos').textContent=totalCodigos;
+    $('numAsignados').textContent=conCodigo;
+    $('numTotal').textContent=personas.length;
+    $('nombreArchivo').textContent=archivoNombre+(hojaNombre?(' · '+hojaNombre):'');
+
+    var q=normaliza($('buscaPersona').value);
+    var cont=$('listaPersonas'); cont.innerHTML='';
+    var vistos=0;
+    for(var i=0;i<personas.length;i++){
+      var pe=personas[i];
+      var tiene=codigosDe(pe).length>0;
+      if(filtro==='sin' && tiene) continue;
+      if(filtro==='con' && !tiene) continue;
+      if(q && normaliza(pe.nombre+' '+pe.extra+' '+codigosDe(pe).map(function(a){return a.codigo;}).join(' ')).indexOf(q)<0) continue;
+      try{
+        cont.appendChild(filaPersona(pe, function(x){ return function(){ verPersona(x); }; }(pe), ''));
+      }catch(e){ continue; }
+      vistos++;
+      if(vistos>=200) break;
+    }
+    if(!vistos){
+      var v=document.createElement('p');
+      v.className='vacio'; v.style.padding='22px 20px';
+      v.textContent='No hay personas que coincidan.';
+      cont.appendChild(v);
+    }
+  }
+  $('buscaPersona').addEventListener('input', pintarPersonas);
+  document.querySelectorAll('#filtros .chip').forEach(function(c){
+    c.addEventListener('click', function(){
+      filtro=c.dataset.filtro;
+      document.querySelectorAll('#filtros .chip').forEach(function(o){ o.setAttribute('aria-pressed', String(o===c)); });
+      pintarPersonas();
+    });
+  });
+
+  /* ---- descargar ---- */
+  $('btnExcel').addEventListener('click', function(){
+    if(!personas.length) return;
+    try{
+      var lb=libro;
+      if(!lb || !hojaExcel){
+        lb=XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(lb, XLSX.utils.aoa_to_sheet(filas), hojaNombre||'Hoja1');
+      }
+      var base=(archivoNombre||'personas').replace(/\.(xlsx|xlsm|xls|csv)$/i,'');
+      XLSX.writeFile(lb, base+'_con_codigos.xlsx');
+      avisar('Archivo descargado');
+    }catch(e){ avisar('No se pudo generar el archivo.', true); }
+  });
+
+  $('btnQuitarLista').addEventListener('click', function(){
+    if(!personas.length){ avisar('No hay ninguna lista cargada.'); return; }
+    preguntar('Quitar la lista',
+      'Se borrarán las '+personas.length+' personas y sus códigos de la app. El archivo de tu equipo no cambia.',
+      'Quitar', function(){
+        libro=null; hojaExcel=null; personas=[]; filas=[]; archivoNombre=''; hojaNombre='';
+        try{ localStorage.removeItem(CLAVE_P); }catch(e){}
+        pintarPersonas(); avisar('Lista quitada');
+      });
+  });
+
+  /* ---- guardar y recuperar ---- */
+  function guardarPersonas(){
+    try{
+      var d=JSON.stringify({
+        archivoNombre:archivoNombre, hojaNombre:hojaNombre, filaBase:filaBase, filaEnc:filaEnc,
+        colNombre:colNombre, colExtra:colExtra, colCodigo:colCodigo, colFecha:colFecha,
+        titulosMayus:titulosMayus, filas:filas,
+        personas:personas.map(function(p){
+          return {nombre:p.nombre, extra:p.extra, asigs:p.asigs.map(function(a){
+            return {fila:a.fila, codigo:a.codigo, fecha:a.fecha};
+          })};
+        })
+      });
+      if(d.length<3500000) localStorage.setItem(CLAVE_P, d);
+    }catch(e){}
+  }
+  function recuperarPersonas(){
+    try{
+      var d=JSON.parse(localStorage.getItem(CLAVE_P)||'null');
+      if(!d || !d.personas || !d.personas.length) return;
+      archivoNombre=d.archivoNombre||''; hojaNombre=d.hojaNombre||'';
+      filaBase=d.filaBase||0; filaEnc=d.filaEnc||0;
+      colNombre=d.colNombre||0; colExtra=(d.colExtra===undefined?-1:d.colExtra);
+      colCodigo=d.colCodigo||0; colFecha=(d.colFecha===undefined?-1:d.colFecha);
+      titulosMayus=!!d.titulosMayus;
+      filas=d.filas||[];
+      personas=d.personas.map(function(p){
+        return {nombre:p.nombre, extra:p.extra||'', asigs:(p.asigs||[]).map(function(a){
+          return {fila:a.fila, codigo:a.codigo||'', fecha:a.fecha||''};
+        })};
+      });
+    }catch(e){}
+  }
+  chkAsignar.addEventListener('change', function(){
+    try{ localStorage.setItem('lector-codigos-asignar', chkAsignar.checked?'1':'0'); }catch(e){}
+  });
+
+  /* ===== instalación ===== */
+  var promesaInstalar=null;
+  var instalada = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true;
+  function estadoInstalacion(){
+    var e=$('estadoInstalar'), t=$('tarjetaInstalar'), b2=$('btnInstalar2');
+    if(instalada){ e.textContent='Ya está instalada en este dispositivo.'; t.classList.remove('visible'); b2.hidden=true; return; }
+    if(promesaInstalar){ e.textContent='Lista para instalarse en la pantalla de inicio.'; t.classList.add('visible'); b2.hidden=false; return; }
+    e.textContent='Usa el menú del navegador y elige Instalar aplicación o Agregar a pantalla de inicio.';
+    t.classList.remove('visible'); b2.hidden=true;
+  }
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault(); promesaInstalar=e; estadoInstalacion();
+  });
+  window.addEventListener('appinstalled', function(){
+    instalada=true; promesaInstalar=null; estadoInstalacion(); avisar('Aplicación instalada');
+  });
+  async function instalar(){
+    if(!promesaInstalar) return;
+    promesaInstalar.prompt();
+    try{ await promesaInstalar.userChoice; }catch(e){}
+    promesaInstalar=null; estadoInstalacion();
+  }
+  $('btnInstalar').addEventListener('click', instalar);
+  $('btnInstalar2').addEventListener('click', instalar);
+
+  if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){
+    window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); });
+  }
+
+  /* ===== arranque ===== */
+  (function(){
+    var faltan=[];
+    if(typeof ZXing==='undefined' || !ZXing.BarcodeFormat) faltan.push('zxing.min.js');
+    if(!hayExcelJS()) faltan.push('xlsx.min.js');
+    $('estadoLibs').textContent = faltan.length
+      ? 'Falta subir al sitio: '+faltan.join(' y ')
+      : 'Lector de códigos y Excel cargados correctamente.';
+    if(faltan.length) avisar('Falta subir al sitio: '+faltan.join(' y '), true);
+  })();
+
+  medirBarras();
+  snack.classList.add('arriba');
+  recuperar();
+  recuperarPersonas();
+  try{ chkAsignar.checked = localStorage.getItem('lector-codigos-asignar')!=='0'; }catch(e){}
+  pintar();
+  pintarPersonas();
+  estadoInstalacion();
+  if(!hayCamara()){
+    $('textoReposo').textContent='Este navegador no permite abrir la cámara aquí. Publica la app por https o usa la lectura desde una imagen.';
+    fab.disabled=true;
+  } else listar();
+  document.addEventListener('visibilitychange', function(){ if(document.hidden && activo) apagar(true); });
+  window.addEventListener('pagehide', function(){ if(activo) apagar(true); });
+})();
+</script>
+</body>
+</html>
